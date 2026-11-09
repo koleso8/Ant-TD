@@ -6,6 +6,7 @@ import { freeStars, totalStars } from './progress';
 import { actTitle, difficultyText, gameTitle, getLang, LANGS, levelText, perkText, spellText, t, targetText, towerText } from './i18n';
 import { Path, snapWaypoints } from './path';
 import type { Game } from './game';
+import { canInstall, fullscreenSupported, isInstalledApp, promptInstall } from '../engine/device';
 import type { Tower } from './tower';
 import { PAL } from '../render/palette';
 import { drawText, measure, wrapText } from '../render/text';
@@ -483,17 +484,29 @@ export class UI {
 
   private drawSettings(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
+    const off = 'rgba(90,60,30,0.9)';
     this.dim(ctx, 0.72);
-    this.panel(ctx, 290, 110, 700, 500, 22);
-    drawText(ctx, t('settings.title'), 640, 162, { size: 40, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
-    drawText(ctx, t('settings.language'), 340, 245, { size: 24 });
+    this.panel(ctx, 290, 76, 700, 568, 22);
+    drawText(ctx, t('settings.title'), 640, 126, { size: 40, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
+    drawText(ctx, t('settings.language'), 340, 210, { size: 24 });
     LANGS.forEach((l, i) => {
       const on = getLang() === l.id;
-      this.bigButton(ctx, 660 + i * 180, 245, 160, 52, l.name, () => g.setLang(l.id), on ? '#3c8a2b' : 'rgba(90,60,30,0.9)', 20);
+      this.bigButton(ctx, 660 + i * 180, 210, 160, 52, l.name, () => g.setLang(l.id), on ? '#3c8a2b' : off, 20);
     });
-    this.slider(ctx, 340, 340, t('settings.music'), g.progress.settings.music, (v) => g.setMusic(v));
-    this.slider(ctx, 340, 430, t('settings.sfx'), g.progress.settings.sfx, (v) => g.setSfx(v));
-    this.bigButton(ctx, 640, 545, 240, 60, t('settings.back'), () => g.closeSettings(), 'rgba(90,60,30,0.9)', 22);
+    this.slider(ctx, 340, 300, t('settings.music'), g.progress.settings.music, (v) => g.setMusic(v));
+    this.slider(ctx, 340, 385, t('settings.sfx'), g.progress.settings.sfx, (v) => g.setSfx(v));
+    drawText(ctx, t('settings.fullscreen'), 340, 470, { size: 24 });
+    if (isInstalledApp()) {
+      drawText(ctx, t('settings.fsApp'), 580, 470, { size: 18, color: PAL.uiGold });
+    } else if (!fullscreenSupported()) {
+      // iPhone не умеет полный экран в браузере: только через значок на главном экране.
+      drawText(ctx, t('settings.fsHint'), 580, 470, { size: 18, color: PAL.uiGold });
+    } else {
+      const want = g.fullscreenWanted;
+      this.bigButton(ctx, 660, 470, 160, 52, t('settings.on'), () => g.setFullscreen(true), want ? '#3c8a2b' : off, 20);
+      this.bigButton(ctx, 840, 470, 160, 52, t('settings.offBtn'), () => g.setFullscreen(false), want ? off : '#3c8a2b', 20);
+    }
+    this.bigButton(ctx, 640, 580, 240, 60, t('settings.back'), () => g.closeSettings(), off, 22);
   }
 
   /** Ползунок громкости: тап по полосе ставит значение, кнопки по краям двигают на шаг. */
@@ -521,6 +534,8 @@ export class UI {
     drawText(ctx, t('title.subtitle'), 640, 158, { size: 20, align: 'center', weight: 'normal', color: '#f6e6c8', strokeWidth: 5 });
     this.bigButton(ctx, 640, 630, 300, 74, t('title.play'), () => g.toLevels(), '#3c8a2b', 30);
     this.bigButton(ctx, 1150, 660, 200, 48, t('title.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 18);
+    // Chrome готов поставить игру значком на главный экран: оттуда она сразу открывается на весь экран.
+    if (canInstall()) this.bigButton(ctx, 130, 660, 200, 48, t('title.install'), () => promptInstall(), '#3c8a2b', 18);
     drawText(ctx, t('title.controls'), 640, 698, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
   }
 

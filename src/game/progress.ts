@@ -2,11 +2,13 @@ import { DIFFICULTIES, TARGET_MODES, type DifficultyId, type TargetMode } from '
 import { LANGS, type Lang } from './i18n';
 import { PERKS, starsSpent } from './perks';
 
-/** Настройки игрока: язык (null — определить по браузеру) и громкость 0..1. */
+/** Настройки игрока: язык (null — определить по браузеру), громкость 0..1, полный экран. */
 export interface Settings {
   lang: Lang | null;
   music: number;
   sfx: number;
+  /** Полный экран по тапу; null — по умолчанию: на телефоне да, на ПК нет. */
+  fullscreen: boolean | null;
 }
 
 /** Сохранение прогресса в localStorage: звёзды по уровням, перки, выбранная сложность, настройки. */
@@ -30,7 +32,7 @@ function validDifficulty(id: unknown): DifficultyId | null {
 }
 
 export function defaultSettings(): Settings {
-  return { lang: null, music: 0.6, sfx: 0.8 };
+  return { lang: null, music: 0.6, sfx: 0.8, fullscreen: null };
 }
 
 export function defaultProgress(): Progress {
@@ -69,6 +71,7 @@ export function loadProgress(): Progress {
         lang: LANGS.some((l) => l.id === s.lang) ? (s.lang as Lang) : null,
         music: volume(s.music, def.music),
         sfx: volume(s.sfx, def.sfx),
+        fullscreen: typeof s.fullscreen === 'boolean' ? s.fullscreen : null,
       },
     };
   } catch {

@@ -20,6 +20,7 @@ import { installSprites } from '../render/sprites';
 import { drawSplash, drawSplashSign } from '../render/splash';
 import { detectLang, gameTitle, getLang, setLang, t, targetText, type Lang } from './i18n';
 import { audio } from '../engine/audio';
+import { enterFullscreen, exitFullscreen, isInstalledApp, isTouchDevice } from '../engine/device';
 import splashUrl from '../assets/sprites/splash.webp';
 
 export type GameState = 'title' | 'levels' | 'perks' | 'intro' | 'settings' | 'playing' | 'won' | 'lost';
@@ -215,6 +216,18 @@ export class Game {
     return Math.min(1, Math.max(0, Math.round(v * 20) / 20));
   }
 
+  /** Нужен ли полный экран: выбор игрока, а по умолчанию да на телефоне и нет на ПК. */
+  get fullscreenWanted(): boolean {
+    return this.progress.settings.fullscreen ?? isTouchDevice();
+  }
+
+  setFullscreen(on: boolean): void {
+    this.progress.settings.fullscreen = on;
+    saveProgress(this.progress);
+    if (on) enterFullscreen();
+    else exitFullscreen();
+  }
+
   /** Заголовок вкладки и атрибут lang на текущем языке. */
   private syncLangDom(): void {
     document.title = gameTitle();
@@ -331,6 +344,12 @@ export class Game {
   }
 
   private onTap(p: Vec): void {
+    this.handleTap(p);
+    // Полный экран по тапу: браузер разрешает его только в ответ на жест, не при загрузке страницы.
+    if (this.fullscreenWanted && !isInstalledApp()) enterFullscreen();
+  }
+
+  private handleTap(p: Vec): void {
     if (this.state !== 'playing' || this.paused) {
       if (this.ui.tapOverlay(p)) audio.play('click');
       return;

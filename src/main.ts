@@ -2,7 +2,16 @@ import { Screen } from './engine/canvas';
 import { Input } from './engine/input';
 import { Game } from './game/game';
 
+/** Офлайн и установка как приложение: только в собранной игре, в dev service worker мешал бы горячей перезагрузке. */
+function registerServiceWorker(): void {
+  if (!import.meta.env.PROD || !('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  const go = (): void => { navigator.serviceWorker.register('./sw.js').catch(() => {}); };
+  if (document.readyState === 'complete') go();
+  else window.addEventListener('load', go);
+}
+
 function boot(): void {
+  registerServiceWorker();
   const screen = new Screen();
   const input = new Input(screen);
   const game = new Game(screen, input);
