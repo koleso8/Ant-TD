@@ -1,0 +1,22 @@
+{
+  "name": "termite_soldier",
+  "title": "Термит-солдат",
+  "frame": 128,
+  "frames": 6,
+  "directions": [
+    "E",
+    "SE",
+    "S",
+    "SW",
+    "W",
+    "NW",
+    "N",
+    "NE"
+  ],
+  "anchor": [
+    64,
+    67
+  ],
+  "gameScale": 0.5,
+  "perspective": 0.86
+}
