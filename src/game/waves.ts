@@ -48,6 +48,7 @@ export class WaveManager {
       this.spawners.push({ kind: grp.kind, left: grp.count, interval: grp.interval, timer: grp.delay, hpMul, path: grp.path ?? 0 });
     }
     this.countdown = null;
+    g.sound('wave');
     return true;
   }
 

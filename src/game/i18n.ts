@@ -1,0 +1,353 @@
+import { DIFFICULTIES, HERO, SPELLS, TARGET_MODES, TOWERS, type DifficultyId, type SpellId, type TargetMode, type TowerKind } from './config';
+import { ACTS, GAME_TITLE, LEVELS } from './levels';
+import { PERKS } from './perks';
+
+/**
+ * Языки. Русский — исходный: тексты лежат прямо в config.ts, levels.ts и perks.ts.
+ * Английский хранится здесь таблицами по id; функции ниже отдают нужный язык.
+ * Модуль без DOM: его импортирует и симуляция в Node.
+ */
+export type Lang = 'ru' | 'en';
+export const LANGS: ReadonlyArray<{ id: Lang; name: string }> = [
+  { id: 'ru', name: 'Русский' },
+  { id: 'en', name: 'English' },
+];
+
+let current: Lang = 'ru';
+export function getLang(): Lang {
+  return current;
+}
+export function setLang(l: Lang): void {
+  current = l;
+}
+/** Язык по умолчанию из браузера: русский для ru/uk/be/kk, иначе английский. */
+export function detectLang(): Lang {
+  const n = (typeof navigator !== 'undefined' ? navigator.language : 'ru').toLowerCase();
+  return /^(ru|uk|be|kk)/.test(n) ? 'ru' : 'en';
+}
+
+const UI_RU = {
+  'title.subtitle': 'Tower defense про оборону муравейника',
+  'title.play': 'Играть',
+  'title.controls': 'Управление мышью и пальцем',
+  'title.settings': 'Настройки',
+  'hud.wave': 'Волна {0}/{1}',
+  'hotbar.pick': 'Выбери точку на поле',
+  'wave.fight': 'В бой!',
+  'wave.next': 'Следующая волна',
+  'wave.in': 'через {0} с',
+  'wave.running': 'Волна {0} идёт',
+  'wave.last': 'Последняя волна!',
+  'info.again': ' Нажми ещё раз, чтобы выбрать.',
+  'info.level': 'уровень',
+  'info.building': 'строится',
+  'info.target': 'Цель башен: {0}',
+  'info.targetHint': ' Тап листает режимы для всех башен.',
+  'info.cooldown': 'перезарядка {0} с',
+  'info.pickSpot': 'выбери точку на поле',
+  'info.freeCell': 'Свободная клетка',
+  'info.freeCellDesc': 'Выбери, что построить. Солдаты держат врага, стрелки и споры достают летающих.',
+  'menu.building': 'СТРОИМ',
+  'menu.max': 'Макс. уровень',
+  'menu.upgrade': 'Улучшить до {0}',
+  'menu.sell': 'Продать',
+  'levels.level': 'Уровень {0}',
+  'levels.play': 'Играть',
+  'levels.replay': 'Играть снова',
+  'levels.locked': 'Пройди предыдущий уровень',
+  'levels.perks': 'Улучшения колонии · {0} ★',
+  'levels.difficulty': 'Сложность: {0} (меняется перед уровнем)',
+  'levels.reset': 'Сбросить прогресс',
+  'levels.resetConfirm': 'Точно сбросить? Ещё раз',
+  'levels.settings': 'Настройки',
+  'perks.title': 'Улучшения колонии',
+  'perks.free': 'Свободных звёзд: {0} из {1}. Звёзды дают победы на уровнях, улучшения действуют везде.',
+  'perks.next': 'Следующий ранг: {0}',
+  'perks.maxRank': 'Максимальный ранг',
+  'perks.max': 'Макс.',
+  'perks.buy': '+1 за {0} ★',
+  'perks.back': 'К уровням',
+  'perks.refund': 'Вернуть все звёзды',
+  'perks.refundHint': 'Звёзды возвращаются без потерь: пробуй разные наборы под разные уровни.',
+  'intro.level': 'Уровень {0}',
+  'intro.stats': '{0} волн · {1} · {2} клеток под застройку · {3} личинок',
+  'intro.onePath': 'одна тропа',
+  'intro.paths': '{0} тропы',
+  'intro.difficulty': 'Сложность',
+  'intro.fight': 'В бой!',
+  'intro.back': 'К уровням',
+  'intro.hint1': 'Тап по свободной клетке строит башню. Заклинания внизу слева: тап по кнопке, потом по точке на поле.',
+  'intro.hint2': 'Q, W, E: заклинания. Пробел: пауза. N: следующая волна. Esc или правая кнопка: отмена.',
+  'end.won': 'Муравейник выстоял!',
+  'end.lost': 'Муравейник пал...',
+  'end.finaleAct1': ' Акт 1 завершён: утром колония сама выступает в поход на термитник.',
+  'end.finaleAll': ' Термитник пал, королева мертва. Поход окончен, колония возвращается домой с победой.',
+  'end.difficulty': 'Сложность: {0}.',
+  'end.wonText': 'Все {0} волн отбиты, личинок уцелело {1} из {2}. {3}{4}',
+  'end.lostText': 'Продержались волн: {0} из {1}. {2} Попробуй казарму на развилке и не копи заклинания{3}.',
+  'end.easier': ', или выбери сложность полегче',
+  'end.back': 'К уровням',
+  'end.again': 'Ещё раз',
+  'pause.title': 'Пауза',
+  'pause.resume': 'Продолжить',
+  'pause.levels': 'К уровням',
+  'pause.settings': 'Настройки',
+  'pause.hint': 'Тап мимо кнопок или Пробел тоже продолжают игру',
+  'settings.title': 'Настройки',
+  'settings.language': 'Язык',
+  'settings.music': 'Музыка',
+  'settings.sfx': 'Звуки',
+  'settings.off': 'выкл',
+  'settings.back': 'Назад',
+  'portrait.title': 'Поверни телефон',
+  'portrait.sub': 'горизонтально: так удобнее играть',
+  'fx.noNectar': 'Мало нектара',
+  'fx.stomp': 'Напор!',
+  'fx.fell': '{0} пал!',
+  'fx.cooldown': 'Перезарядка {0} с',
+  'fx.target': 'Цель башен: {0}',
+  'stats.acid': 'Урон {0}–{1} · радиус {2} · выстрел каждые {3} с · бьёт по воздуху',
+  'stats.barracks': '{0} солдата · здоровье {1} · урон {2}–{3} · возрождение {4} с',
+  'stats.catapult': 'Урон {0}–{1} по площади {2} · радиус {3} · только по земле',
+  'stats.spore': 'Замедление {0}% · яд {1}/с · радиус {2} · яд игнорирует панцирь',
+};
+export type UiKey = keyof typeof UI_RU;
+
+const UI_EN: Record<UiKey, string> = {
+  'title.subtitle': 'A tower defense about defending an anthill',
+  'title.play': 'Play',
+  'title.controls': 'Mouse and touch controls',
+  'title.settings': 'Settings',
+  'hud.wave': 'Wave {0}/{1}',
+  'hotbar.pick': 'Pick a spot on the field',
+  'wave.fight': 'To battle!',
+  'wave.next': 'Next wave',
+  'wave.in': 'in {0} s',
+  'wave.running': 'Wave {0} underway',
+  'wave.last': 'Last wave!',
+  'info.again': ' Tap again to confirm.',
+  'info.level': 'level',
+  'info.building': 'under construction',
+  'info.target': 'Tower target: {0}',
+  'info.targetHint': ' Tap to cycle; applies to all towers.',
+  'info.cooldown': 'recharging {0} s',
+  'info.pickSpot': 'pick a spot on the field',
+  'info.freeCell': 'Free cell',
+  'info.freeCellDesc': 'Choose what to build. Soldiers hold enemies; spitters and spores reach flyers.',
+  'menu.building': 'BUILDING',
+  'menu.max': 'Max level',
+  'menu.upgrade': 'Upgrade to {0}',
+  'menu.sell': 'Sell',
+  'levels.level': 'Level {0}',
+  'levels.play': 'Play',
+  'levels.replay': 'Play again',
+  'levels.locked': 'Beat the previous level',
+  'levels.perks': 'Colony upgrades · {0} ★',
+  'levels.difficulty': 'Difficulty: {0} (set before a level)',
+  'levels.reset': 'Reset progress',
+  'levels.resetConfirm': 'Really reset? Tap again',
+  'levels.settings': 'Settings',
+  'perks.title': 'Colony upgrades',
+  'perks.free': 'Free stars: {0} of {1}. Stars come from victories; upgrades apply everywhere.',
+  'perks.next': 'Next rank: {0}',
+  'perks.maxRank': 'Max rank',
+  'perks.max': 'Max',
+  'perks.buy': '+1 for {0} ★',
+  'perks.back': 'To levels',
+  'perks.refund': 'Refund all stars',
+  'perks.refundHint': 'Refunds are free: try different sets for different levels.',
+  'intro.level': 'Level {0}',
+  'intro.stats': '{0} waves · {1} · {2} buildable cells · {3} larvae',
+  'intro.onePath': 'one path',
+  'intro.paths': '{0} paths',
+  'intro.difficulty': 'Difficulty',
+  'intro.fight': 'To battle!',
+  'intro.back': 'To levels',
+  'intro.hint1': 'Tap a free cell to build a tower. Spells are bottom left: tap a button, then a spot on the field.',
+  'intro.hint2': 'Q, W, E: spells. Space: pause. N: next wave. Esc or right click: cancel.',
+  'end.won': 'The anthill stands!',
+  'end.lost': 'The anthill has fallen...',
+  'end.finaleAct1': ' Act 1 complete: at dawn the colony marches on the termite mound.',
+  'end.finaleAll': ' The mound has fallen and the empress is dead. The campaign is over; the colony returns home in triumph.',
+  'end.difficulty': 'Difficulty: {0}.',
+  'end.wonText': 'All {0} waves repelled, {1} of {2} larvae survived. {3}{4}',
+  'end.lostText': 'Waves survived: {0} of {1}. {2} Try barracks at the fork and do not hoard spells{3}.',
+  'end.easier': ', or pick an easier difficulty',
+  'end.back': 'To levels',
+  'end.again': 'Again',
+  'pause.title': 'Paused',
+  'pause.resume': 'Resume',
+  'pause.levels': 'To levels',
+  'pause.settings': 'Settings',
+  'pause.hint': 'Tap outside the buttons or press Space to resume',
+  'settings.title': 'Settings',
+  'settings.language': 'Language',
+  'settings.music': 'Music',
+  'settings.sfx': 'Sounds',
+  'settings.off': 'off',
+  'settings.back': 'Back',
+  'portrait.title': 'Rotate your phone',
+  'portrait.sub': 'landscape is easier to play',
+  'fx.noNectar': 'Not enough nectar',
+  'fx.stomp': 'Charge!',
+  'fx.fell': '{0} has fallen!',
+  'fx.cooldown': 'Recharging {0} s',
+  'fx.target': 'Tower target: {0}',
+  'stats.acid': 'Damage {0}–{1} · range {2} · shot every {3} s · hits air',
+  'stats.barracks': '{0} soldiers · health {1} · damage {2}–{3} · respawn {4} s',
+  'stats.catapult': 'Damage {0}–{1} in area {2} · range {3} · ground only',
+  'stats.spore': 'Slow {0}% · poison {1}/s · range {2} · poison ignores armor',
+};
+
+/** Строка интерфейса на текущем языке; {0}, {1}… заменяются аргументами. */
+export function t(key: UiKey, ...args: ReadonlyArray<string | number>): string {
+  const s = (current === 'ru' ? UI_RU : UI_EN)[key];
+  return args.length ? s.replace(/\{(\d+)\}/g, (_, i: string) => String(args[Number(i)] ?? '')) : s;
+}
+
+// ───────────────────────── контент ─────────────────────────
+
+interface Named { name: string; desc: string }
+interface Spec extends Named { short: string }
+interface TowerText extends Spec { specs: readonly Spec[] }
+
+const TOWERS_EN: Record<TowerKind, TowerText> = {
+  acid: {
+    name: 'Acid Spitters', short: 'Spitters', desc: 'Ants spit formic acid. Fast, accurate, and they reach flyers.',
+    specs: [
+      { name: 'Snipers', short: 'Snipers', desc: 'One precise long-range spit. Pierces 60% of armor.' },
+      { name: 'Volley', short: 'Volley', desc: 'Two spits per shot at different targets, very often.' },
+    ],
+  },
+  barracks: {
+    name: 'Soldier Barracks', short: 'Barracks', desc: 'Three soldier ants block the path and hold enemies in melee.',
+    specs: [
+      { name: 'Shellbacks', short: 'Shellbacks', desc: 'Soldiers in pebble armor: twice the health and 40% armor.' },
+      { name: 'Reapers', short: 'Reapers', desc: 'Four fast fighters with huge damage but no armor.' },
+    ],
+  },
+  catapult: {
+    name: 'Seed Catapult', short: 'Catapult', desc: 'Leafcutters hurl seeds: slow, but hits an area. Cannot reach flyers.',
+    specs: [
+      { name: 'Stonethrower', short: 'Stone', desc: 'One boulder: huge damage and stuns everyone in the impact zone.' },
+      { name: 'Seed Rain', short: 'Rain', desc: 'Three seeds in a fan: covers a whole crowd.' },
+    ],
+  },
+  spore: {
+    name: 'Mycelium', short: 'Mycelium', desc: 'Spore clouds slow and poison everyone around. Poison ignores armor.',
+    specs: [
+      { name: 'Rot', short: 'Rot', desc: 'Poison three times stronger, clouds bigger and longer-lasting.' },
+      { name: 'Daze', short: 'Daze', desc: 'The cloud nearly stops enemies and stuns everyone who enters it.' },
+    ],
+  },
+};
+
+export function towerText(kind: TowerKind): TowerText {
+  if (current === 'en') return TOWERS_EN[kind];
+  const d = TOWERS[kind];
+  return { name: d.name, short: d.short, desc: d.desc, specs: d.specs.map((s) => ({ name: s.name, short: s.short, desc: s.desc })) };
+}
+
+interface HeroText { name: string; title: string; desc: string; ability: string }
+const HERO_EN: HeroText = {
+  name: 'Mandible', title: 'warlord of the anthill',
+  desc: 'Summoned by the Retinue spell: holds an enemy, hits everyone nearby and casts Mandibles on his own. Cannot hit flyers.',
+  ability: 'Mandibles',
+};
+export function heroText(): HeroText {
+  return current === 'en' ? HERO_EN : { name: HERO.name, title: HERO.title, desc: HERO.desc, ability: HERO.abilityName };
+}
+
+const SPELLS_EN: Record<SpellId, Named> = {
+  acid: { name: 'Acid Rain', desc: 'Workers spit acid all at once: damage to everyone in the circle, armor is no help, reaches flyers.' },
+  retinue: { name: 'Retinue', desc: 'Warlord Mandible and two soldiers step out to the spot and hold enemies until they tire.' },
+  spores: { name: 'Spore Cloud', desc: 'A spore cloud on the path: enemies inside are slowed by half, poisoned and stunned on entry.' },
+};
+export function spellText(id: SpellId): Named {
+  if (current === 'en') return SPELLS_EN[id];
+  const d = SPELLS.find((s) => s.id === id)!;
+  return { name: d.name, desc: d.desc };
+}
+
+const DIFF_EN: Record<DifficultyId, Named> = {
+  easy: { name: 'Easy', desc: 'Weaker enemies, more nectar: relax and admire the towers.' },
+  normal: { name: 'Normal', desc: 'As designed: you will have to think about where to build and what to upgrade.' },
+  hard: { name: 'Hard', desc: 'Tough enemies and half the larvae: almost no room for error. For veterans.' },
+};
+export function difficultyText(id: DifficultyId): Named {
+  if (current === 'en') return DIFF_EN[id];
+  const d = DIFFICULTIES.find((x) => x.id === id)!;
+  return { name: d.name, desc: d.desc };
+}
+
+const TARGET_EN: Record<TargetMode, Spec> = {
+  first: { name: 'First', short: 'First', desc: 'Hits the enemy closest to the anthill.' },
+  last: { name: 'Last', short: 'Last', desc: 'Hits the enemy farthest from the anthill: the one that just entered range.' },
+  near: { name: 'Nearest', short: 'Near', desc: 'Hits the enemy nearest to the tower itself.' },
+  strong: { name: 'Strongest', short: 'Strong', desc: 'Hits the enemy with the most health.' },
+  weak: { name: 'Weakest', short: 'Weak', desc: 'Finishes off the enemy with the least health.' },
+};
+export function targetText(id: TargetMode): Spec {
+  if (current === 'en') return TARGET_EN[id];
+  const d = TARGET_MODES.find((x) => x.id === id)!;
+  return { name: d.name, short: d.short, desc: d.desc };
+}
+
+interface PerkText { name: string; desc: (rank: number) => string }
+const PERKS_EN: Record<string, PerkText> = {
+  acidDmg: { name: 'Caustic Acid', desc: (r) => `Spitter damage +${r * 10}%` },
+  soldierHp: { name: 'Hard Chitin', desc: (r) => `Barracks and retinue soldier health +${r * 15}%` },
+  spore: { name: 'Dense Spores', desc: (r) => `Mycelium and spore cloud poison +${r * 12}%, clouds last longer` },
+  catapultDmg: { name: 'Heavy Seeds', desc: (r) => `Catapult damage +${r * 12}%` },
+  bounty: { name: 'Thrifty Foragers', desc: (r) => `Nectar per enemy +${r * 10}%` },
+  startGold: { name: 'Full Pantries', desc: (r) => `Starting nectar +${r * 60}` },
+  hero: { name: 'Warlord Tempering', desc: (r) => `Mandible arrives ${r} level${r > 1 ? 's' : ''} higher, spell cooldowns −${r * 8}%` },
+  lives: { name: 'Deep Nurseries', desc: (r) => `+${r * 2} larvae at level start` },
+};
+export function perkText(id: string): PerkText {
+  const p = PERKS.find((x) => x.id === id)!;
+  if (current === 'en' && PERKS_EN[id]) return PERKS_EN[id];
+  return { name: p.name, desc: p.desc };
+}
+
+interface LevelText { name: string; subtitle: string; story: string }
+const LEVELS_EN: Record<string, LevelText> = {
+  'oak-edge': {
+    name: 'Edge of the Old Oak', subtitle: 'First siege: one path, 12 waves',
+    story: 'The old oak fell in a storm and the forest floor shuddered. Termites crawled out of the rotten stump, wasps rose from the fallen nest, and beetles came out from under the roots. The queen is laying a new brood, and the colony must hold out until the end of the season. You are the warlord of the anthill: place spitters, raise barracks and let no enemy reach the larvae.',
+  },
+  'oak-roots': {
+    name: 'Roots of the Fallen Oak', subtitle: 'Two paths, one nest, 14 waves',
+    story: 'Scouts found where the termites come from: the rotten stump under the roots of the fallen oak. Now the enemy comes along two paths at once, from the left and from below, and both meet at the eastern entrance. The queen ordered the roots held until the foreign queen has raised a new army. They say two rhinoceros beetles woke under the roots, and both are hungry.',
+  },
+  'rotten-stump-night': {
+    name: 'Night at the Rotten Stump', subtitle: 'Act finale: the termite queen, 16 waves',
+    story: 'The scouts crept up to the stump itself, and at night it came alive: a termite queen emerged, huge and slow, and every step of hers births new soldiers. The army comes from two sides, from the hole in the stump on the left and from the darkness on the right, with the anthill in between. This is the last night of the first act: hold until dawn, and in the morning the colony itself marches out.',
+  },
+  'stream-crossing': {
+    name: 'Stream Crossing', subtitle: 'The campaign begins: two bridges, dragonflies and leeches',
+    story: 'In the morning the colony set out. The road to the termite mound crosses a stream: two fallen branches serve as bridges, and the termites use them too. Camp is on our bank; hold the crossing until the caravan with larvae and supplies gets across. Dragonflies circle above the water, fast and tough, and leeches crawl out of the silt, barely touched by poison: they heal before your eyes.',
+  },
+  'mound-foot': {
+    name: 'Foot of the Mound', subtitle: 'Three gates in the wall, bomber termites',
+    story: 'The termite mound rises like a wall to the sky. Its defenders pour out of three gates at its foot, and among them are bomber termites: they burst next to our soldiers and hero, so barracks cost dearly here. Camp is right under the wall, there is nowhere to retreat. Hold out, and the way inside is open.',
+  },
+  'mound-heart': {
+    name: 'Heart of the Mound', subtitle: 'Campaign finale: the termite empress',
+    story: 'Inside it is dark and stuffy, the walls glow with mycelium. The termite empress sits in the deepest chamber and will not come out while she still has soldiers. Two tunnels lead to the fork where our camp stands. When the empress finally crawls toward you, her whole guard will follow. This is the last battle of the campaign.',
+  },
+};
+export function levelText(id: string): LevelText {
+  const lv = LEVELS.find((l) => l.id === id)!;
+  if (current === 'en' && LEVELS_EN[id]) return LEVELS_EN[id];
+  return { name: lv.name, subtitle: lv.subtitle, story: lv.story };
+}
+
+const ACTS_EN = ['Act 1 · Defense of the Anthill', 'Act 2 · March on the Termite Mound'];
+export function actTitle(i: number): string {
+  return current === 'en' ? ACTS_EN[i] ?? ACTS[i].title : ACTS[i].title;
+}
+
+export function gameTitle(): string {
+  return current === 'en' ? 'Anthill: Siege' : GAME_TITLE;
+}

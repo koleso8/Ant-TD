@@ -7,6 +7,7 @@ import {
   drawTermite, drawTermiteQueen, drawWasp,
 } from '../render/art';
 import { PAL } from '../render/palette';
+import { t } from './i18n';
 
 export type DamageKind = 'physical' | 'poison' | 'true';
 
@@ -127,6 +128,7 @@ export class Enemy {
         this.attackCd = this.def.meleeInterval;
         b.takeDamage(roll(this.def.meleeDmg), g);
         g.effects.hitSpark(b.x, b.y);
+        g.sound('hit');
       }
       this.legPhase += dt * 3;
       return;
@@ -160,7 +162,8 @@ export class Enemy {
     g.damageDefenders(this.x, this.y, boss.radius, boss.damage, boss.stagger);
     g.effects.ring(this.x, this.y, boss.radius, 'rgba(255,150,90,0.95)', 0.5);
     g.effects.burst(this.x, this.y, 16, 'rgba(120,70,30,0.9)', 170, 5, 0.5, 220);
-    g.effects.text('Напор!', this.x, this.visualY - this.def.radius - 26, PAL.uiRed, 22);
+    g.effects.text(t('fx.stomp'), this.x, this.visualY - this.def.radius - 26, PAL.uiRed, 22);
+    g.sound('stomp');
   }
 
   damage(amount: number, kind: DamageKind, g: GameCtx, byHero = false, pierce = 0, source = byHero ? 'hero' : 'other'): void {
@@ -190,9 +193,11 @@ export class Enemy {
     this.hp = 0;
     g.addGold(Math.max(1, Math.round(this.def.bounty * g.bountyMul)), this.x, this.visualY);
     g.effects.death(this.x, this.visualY, this.deathColor);
+    g.sound(this.def.boss ? 'dieBig' : 'die');
     const ex = this.def.explode;
     if (ex) {
       g.effects.explosion(this.x, this.y, ex.radius);
+      g.sound('impact');
       g.damageDefenders(this.x, this.y, ex.radius, ex.damage);
     }
     g.onEnemyKilled(this);

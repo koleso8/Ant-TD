@@ -3,6 +3,7 @@ import { CELL, DIFFICULTIES, LOGICAL_H, LOGICAL_W, SPELLS, TOWERS, TOWER_ORDER, 
 import { ACTS, GAME_TITLE, LEVELS, type LevelDef } from './levels';
 import { PERKS } from './perks';
 import { freeStars, totalStars } from './progress';
+import { actTitle, difficultyText, gameTitle, getLang, LANGS, levelText, perkText, spellText, t, targetText, towerText } from './i18n';
 import { Path, snapWaypoints } from './path';
 import type { Game } from './game';
 import type { Tower } from './tower';
@@ -18,11 +19,17 @@ interface Btn {
   w: number;
   h: number;
   round?: boolean;
-  onTap: () => void;
+  onTap: (p: Vec) => void;
 }
 
 const R_MENU = 92;
 const OPT_R = 42;
+
+/** Название башни на текущем языке: базовое или имя специализации. */
+function towerDisplayName(tw: Tower): string {
+  const tx = towerText(tw.kind);
+  return tw.spec === null ? tx.name : `${tx.name}: ${tx.specs[tw.spec].name}`;
+}
 
 /** Прицел для кнопки режима цели. */
 function drawTargetIcon(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
@@ -42,14 +49,14 @@ function drawTargetIcon(ctx: CanvasRenderingContext2D, x: number, y: number, r: 
   ctx.fill();
 }
 
-function towerStats(t: Tower): string {
-  const s = t.stats;
+function towerStats(tw: Tower): string {
+  const s = tw.stats;
   const dmg = s.damage ?? [0, 0];
-  switch (t.kind) {
-    case 'acid': return `Урон ${dmg[0]}–${dmg[1]} · радиус ${s.range} · выстрел каждые ${s.interval} с · бьёт по воздуху`;
-    case 'barracks': return `${t.soldiers.length} солдата · здоровье ${s.soldierHp} · урон ${(s.soldierDmg ?? [0, 0])[0]}–${(s.soldierDmg ?? [0, 0])[1]} · возрождение ${s.respawn} с`;
-    case 'catapult': return `Урон ${dmg[0]}–${dmg[1]} по площади ${s.splash} · радиус ${s.range} · только по земле`;
-    case 'spore': return `Замедление ${Math.round((s.slow ?? 0) * 100)}% · яд ${s.poisonDps}/с · радиус ${s.range} · яд игнорирует панцирь`;
+  switch (tw.kind) {
+    case 'acid': return t('stats.acid', dmg[0], dmg[1], s.range, s.interval ?? 1);
+    case 'barracks': return t('stats.barracks', tw.soldiers.length, s.soldierHp ?? 0, (s.soldierDmg ?? [0, 0])[0], (s.soldierDmg ?? [0, 0])[1], s.respawn ?? 0);
+    case 'catapult': return t('stats.catapult', dmg[0], dmg[1], s.splash ?? 0, s.range);
+    case 'spore': return t('stats.spore', Math.round((s.slow ?? 0) * 100), s.poisonDps ?? 0, s.range);
   }
 }
 
@@ -59,8 +66,8 @@ export class UI {
   private overlayButtons: Btn[] = [];
   /** Опция постройки под курсором мыши (для превью радиуса на ПК). */
   hoverKind: TowerKind | null = null;
-  /** Специализация под курсором или выбранная первым тапом: её описание идёт в панель. */
-  hoverSpec: SpecDef | null = null;
+  /** Специализация под курсором или выбранная первым тапом (башня и индекс): её описание идёт в панель. */
+  hoverSpec: [Tower, number] | null = null;
   private hoverSpecPending = false;
   /** Заклинание под курсором или выбранное: его описание идёт в панель. */
   hoverSpell: number | null = null;
@@ -77,14 +84,14 @@ export class UI {
 
   tap(p: Vec): boolean {
     for (const b of this.buttons) {
-      if (UI.hit(b, p)) { b.onTap(); return true; }
+      if (UI.hit(b, p)) { b.onTap(p); return true; }
     }
     return false;
   }
 
   tapOverlay(p: Vec): boolean {
     for (const b of this.overlayButtons) {
-      if (UI.hit(b, p)) { b.onTap(); return true; }
+      if (UI.hit(b, p)) { b.onTap(p); return true; }
     }
     return false;
   }
@@ -110,6 +117,7 @@ export class UI {
       case 'levels': this.drawLevels(ctx); break;
       case 'perks': this.drawPerks(ctx); break;
       case 'intro': this.drawIntro(ctx); break;
+      case 'settings': this.drawSettings(ctx); break;
       default: this.drawEnd(ctx); break;
     }
   }
@@ -175,7 +183,7 @@ export class UI {
     drawLarva(ctx, 168, 42, 11);
     drawText(ctx, String(g.lives), 192, 42, { size: 26 });
     drawFlagIcon(ctx, 258, 42, 28, PAL.flag);
-    drawText(ctx, `Волна ${g.waves.index}/${g.waves.total}`, 280, 42, { size: 20 });
+    drawText(ctx, t('hud.wave', g.waves.index, g.waves.total), 280, 42, { size: 20 });
 
     this.roundBtn(ctx, 1166, 42, 30, () => {
       drawText(ctx, `x${g.speed}`, 1166, 42, { size: 22, color: g.speed === 2 ? PAL.uiGreen : PAL.uiLight, align: 'center' });
@@ -255,7 +263,7 @@ export class UI {
     }
     this.hoverSpell = g.armedSpell ?? hovered;
     if (g.armedSpell !== null) {
-      drawText(ctx, 'Выбери точку на поле', x + w / 2, y - 14, { size: 15, align: 'center', color: PAL.uiGold });
+      drawText(ctx, t('hotbar.pick'), x + w / 2, y - 14, { size: 15, align: 'center', color: PAL.uiGold });
     }
     this.buttons.push({ x, y, w, h: hh, onTap: () => {} });
   }
@@ -277,10 +285,10 @@ export class UI {
     const bh = 72;
     if (w.canCall) {
       this.panel(ctx, x, y, bw, bh, 18, '#3c8a2b');
-      const label = w.index === 0 ? 'В бой!' : 'Следующая волна';
+      const label = w.index === 0 ? t('wave.fight') : t('wave.next');
       drawText(ctx, label, x + bw / 2, y + 23, { size: 22, align: 'center' });
       const secs = Math.ceil(w.countdown ?? 0);
-      drawText(ctx, `через ${secs} с`, x + 68, y + 51, { size: 17, align: 'center', weight: 'normal', stroke: null, color: 'rgba(255,255,255,0.85)' });
+      drawText(ctx, t('wave.in', secs), x + 68, y + 51, { size: 17, align: 'center', weight: 'normal', stroke: null, color: 'rgba(255,255,255,0.85)' });
       if (w.bonus > 0) {
         drawHoney(ctx, x + 146, y + 51, 8);
         drawText(ctx, `+${w.bonus}`, x + 160, y + 51, { size: 18, color: PAL.uiGold });
@@ -288,10 +296,10 @@ export class UI {
       this.buttons.push({ x, y, w: bw, h: bh, onTap: () => g.callWave() });
     } else if (w.index < w.total) {
       this.panel(ctx, x, y, bw, bh, 18);
-      drawText(ctx, `Волна ${w.index} идёт`, x + bw / 2, y + 36, { size: 20, align: 'center', color: 'rgba(246,230,200,0.8)' });
+      drawText(ctx, t('wave.running', w.index), x + bw / 2, y + 36, { size: 20, align: 'center', color: 'rgba(246,230,200,0.8)' });
     } else {
       this.panel(ctx, x, y, bw, bh, 18);
-      drawText(ctx, 'Последняя волна!', x + bw / 2, y + 36, { size: 20, align: 'center', color: PAL.uiGold });
+      drawText(ctx, t('wave.last'), x + bw / 2, y + 36, { size: 20, align: 'center', color: PAL.uiGold });
     }
   }
 
@@ -302,27 +310,31 @@ export class UI {
     let desc = '';
     if (this.hoverKind) {
       const d = TOWERS[this.hoverKind];
-      title = `${d.name} · ${d.levels[0].cost}`;
-      desc = d.desc;
+      const tx = towerText(this.hoverKind);
+      title = `${tx.name} · ${d.levels[0].cost}`;
+      desc = tx.desc;
     } else if (this.hoverSpec) {
-      title = `${this.hoverSpec.name} · ${this.hoverSpec.cost}`;
-      desc = this.hoverSpec.desc + (this.hoverSpecPending ? ' Нажми ещё раз, чтобы выбрать.' : '');
+      const [tw, i] = this.hoverSpec;
+      const sx = towerText(tw.kind).specs[i];
+      title = `${sx.name} · ${tw.def.specs[i].cost}`;
+      desc = sx.desc + (this.hoverSpecPending ? t('info.again') : '');
     } else if (sel?.type === 'tower') {
-      title = `${sel.tower.displayName} · уровень ${sel.tower.level}${sel.tower.building ? ' · строится' : ''}`;
+      title = `${towerDisplayName(sel.tower)} · ${t('info.level')} ${sel.tower.level}${sel.tower.building ? ` · ${t('info.building')}` : ''}`;
       desc = towerStats(sel.tower);
     } else if (this.hoverTarget) {
-      const d = g.targetDef;
-      title = `Цель башен: ${d.name.toLowerCase()}`;
-      desc = `${d.desc} Тап листает режимы для всех башен.`;
+      const d = targetText(g.world.targetMode);
+      title = t('info.target', d.name.toLowerCase());
+      desc = d.desc + t('info.targetHint');
     } else if (this.hoverSpell !== null) {
       const d = SPELLS[this.hoverSpell];
+      const sx = spellText(d.id);
       const cd = g.world.spells.cooldowns[this.hoverSpell];
-      const state = cd > 0 ? ` · перезарядка ${Math.ceil(cd)} с` : g.armedSpell === this.hoverSpell ? ' · выбери точку на поле' : ` · ${d.key}`;
-      title = `${d.name}${state}`;
-      desc = d.desc;
+      const state = cd > 0 ? ` · ${t('info.cooldown', Math.ceil(cd))}` : g.armedSpell === this.hoverSpell ? ` · ${t('info.pickSpot')}` : ` · ${d.key}`;
+      title = `${sx.name}${state}`;
+      desc = sx.desc;
     } else if (sel?.type === 'plot') {
-      title = 'Свободная клетка';
-      desc = 'Выбери, что построить. Солдаты держат врага, стрелки и споры достают летающих.';
+      title = t('info.freeCell');
+      desc = t('info.freeCellDesc');
     } else {
       return;
     }
@@ -409,7 +421,7 @@ export class UI {
         const hot = this.option(
           ctx, ox, oy, dx, dy, can,
           () => drawTowerIcon(ctx, kind, ox, oy - 12, 0.5),
-          String(cost), can ? PAL.uiGold : PAL.uiRed, def.short,
+          String(cost), can ? PAL.uiGold : PAL.uiRed, towerText(kind).short,
           () => g.build(kind, sel.plot),
         );
         if (hot) this.hoverKind = kind;
@@ -417,34 +429,34 @@ export class UI {
       return;
     }
 
-    const t = sel.tower;
-    if (t.canSpecialize) {
+    const tw = sel.tower;
+    if (tw.canSpecialize) {
       // Развилка 4-го уровня: две специализации слева и справа сверху.
       const D = Math.round(R_MENU * 0.8);
-      t.def.specs.forEach((sp, i) => {
+      tw.def.specs.forEach((sp, i) => {
         const ox = mcx + (i === 0 ? -D : D);
         const oy = mcy - D;
         const can = g.gold >= sp.cost;
         const pending = g.pendingSpec === i;
         const hot = this.option(
           ctx, ox, oy, i === 0 ? -1 : 1, -1, can,
-          () => drawTowerIcon(ctx, t.kind, ox, oy - 10, 0.44, 4, i + 1),
-          String(sp.cost), can ? PAL.uiGold : PAL.uiRed, sp.short,
-          () => g.chooseSpec(t, i), pending,
+          () => drawTowerIcon(ctx, tw.kind, ox, oy - 10, 0.44, 4, i + 1),
+          String(sp.cost), can ? PAL.uiGold : PAL.uiRed, towerText(tw.kind).specs[i].short,
+          () => g.chooseSpec(tw, i), pending,
         );
         if (hot || (pending && !this.hoverSpec)) {
-          this.hoverSpec = sp;
+          this.hoverSpec = [tw, i];
           this.hoverSpecPending = pending && !hot;
         }
       });
     } else {
-      const up = t.upgradeCost;
+      const up = tw.upgradeCost;
       const canUp = up !== null && g.gold >= up;
       const ux = mcx;
       const uy = mcy - R_MENU;
       this.option(ctx, ux, uy, 0, -1, up !== null, () => {
         if (up === null) {
-          if (t.building) drawText(ctx, 'СТРОИМ', ux, uy - 8, { size: 13, align: 'center', color: PAL.uiGold });
+          if (tw.building) drawText(ctx, t('menu.building'), ux, uy - 8, { size: 13, align: 'center', color: PAL.uiGold });
           else drawText(ctx, 'MAX', ux, uy - 8, { size: 20, align: 'center', color: PAL.uiGold });
           return;
         }
@@ -458,24 +470,58 @@ export class UI {
         ctx.lineWidth = 2.5;
         ctx.stroke();
       }, up === null ? '—' : String(up), up === null ? PAL.uiLight : canUp ? PAL.uiGold : PAL.uiRed,
-      up === null ? 'Макс. уровень' : `Улучшить до ${t.level + 1}`, () => g.upgradeTower(t));
+      up === null ? t('menu.max') : t('menu.upgrade', tw.level + 1), () => g.upgradeTower(tw));
     }
 
     const sx = mcx;
     const sy = mcy + R_MENU;
     this.option(ctx, sx, sy, 0, 1, true, () => drawHoney(ctx, sx, sy - 8, 12),
-      `+${t.sellValue}`, PAL.uiGold, 'Продать', () => g.sellTower(t));
+      `+${tw.sellValue}`, PAL.uiGold, t('menu.sell'), () => g.sellTower(tw));
   }
 
   // ───────────── экраны ─────────────
 
+  private drawSettings(ctx: CanvasRenderingContext2D): void {
+    const g = this.g;
+    this.dim(ctx, 0.72);
+    this.panel(ctx, 290, 110, 700, 500, 22);
+    drawText(ctx, t('settings.title'), 640, 162, { size: 40, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
+    drawText(ctx, t('settings.language'), 340, 245, { size: 24 });
+    LANGS.forEach((l, i) => {
+      const on = getLang() === l.id;
+      this.bigButton(ctx, 660 + i * 180, 245, 160, 52, l.name, () => g.setLang(l.id), on ? '#3c8a2b' : 'rgba(90,60,30,0.9)', 20);
+    });
+    this.slider(ctx, 340, 340, t('settings.music'), g.progress.settings.music, (v) => g.setMusic(v));
+    this.slider(ctx, 340, 430, t('settings.sfx'), g.progress.settings.sfx, (v) => g.setSfx(v));
+    this.bigButton(ctx, 640, 545, 240, 60, t('settings.back'), () => g.closeSettings(), 'rgba(90,60,30,0.9)', 22);
+  }
+
+  /** Ползунок громкости: тап по полосе ставит значение, кнопки по краям двигают на шаг. */
+  private slider(ctx: CanvasRenderingContext2D, x: number, y: number, label: string, value: number, set: (v: number) => void): void {
+    drawText(ctx, label, x, y, { size: 24 });
+    const bx = 540;
+    const bw = 280;
+    this.bar(ctx, bx, y - 9, bw, 18, value, PAL.uiGold);
+    circle(ctx, bx + bw * value, y, 13);
+    ctx.fillStyle = PAL.uiLight;
+    ctx.fill();
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    this.overlayButtons.push({ x: bx - 14, y: y - 26, w: bw + 28, h: 52, onTap: (p) => set(clamp((p.x - bx) / bw, 0, 1)) });
+    this.bigButton(ctx, bx - 52, y, 46, 46, '−', () => set(value - 0.1), 'rgba(90,60,30,0.9)', 26);
+    this.bigButton(ctx, bx + bw + 52, y, 46, 46, '+', () => set(value + 0.1), 'rgba(90,60,30,0.9)', 26);
+    drawText(ctx, value <= 0 ? t('settings.off') : `${Math.round(value * 100)}%`, bx + bw + 88, y, { size: 20, color: PAL.uiGold });
+  }
+
   private drawTitle(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
     // Фон-диорама уже нарисован игрой; здесь заголовок на табличке и кнопка внизу.
-    drawText(ctx, GAME_TITLE, 640, 100, { size: 60, align: 'center', color: PAL.uiGold, strokeWidth: 10 });
-    drawText(ctx, 'Tower defense про оборону муравейника', 640, 158, { size: 20, align: 'center', weight: 'normal', color: '#f6e6c8', strokeWidth: 5 });
-    this.bigButton(ctx, 640, 630, 300, 74, 'Играть', () => g.toLevels(), '#3c8a2b', 30);
-    drawText(ctx, 'Управление мышью и пальцем', 640, 698, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
+    drawText(ctx, gameTitle(), 640, 100, { size: 60, align: 'center', color: PAL.uiGold, strokeWidth: 10 });
+    drawText(ctx, t('title.subtitle'), 640, 158, { size: 20, align: 'center', weight: 'normal', color: '#f6e6c8', strokeWidth: 5 });
+    this.bigButton(ctx, 640, 630, 300, 74, t('title.play'), () => g.toLevels(), '#3c8a2b', 30);
+    this.bigButton(ctx, 1150, 660, 200, 48, t('title.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 18);
+    drawText(ctx, t('title.controls'), 640, 698, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
   }
 
   private pathsFor(lv: LevelDef): Path[] {
@@ -568,10 +614,10 @@ export class UI {
     this.panel(ctx, x, y, w, h, 18);
     this.miniMap(ctx, lv, x + 12, y + 12, w - 24, 104);
     const beaten = g.progress.beaten[lv.id];
-    const beatenLabel = beaten ? ` · ${DIFFICULTIES.find((d) => d.id === beaten)?.name.toLowerCase() ?? ''}` : '';
-    drawText(ctx, `Уровень ${i + 1}${beatenLabel}`, x + 16, y + 132, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
+    const beatenLabel = beaten ? ` · ${difficultyText(beaten).name.toLowerCase()}` : '';
+    drawText(ctx, `${t('levels.level', i + 1)}${beatenLabel}`, x + 16, y + 132, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
     for (let s = 0; s < 3; s++) drawStar(ctx, x + w - 86 + s * 30, y + 134, 11, s < stars);
-    const nameLines = wrapText(ctx, lv.name, w - 32, 18, 'bold');
+    const nameLines = wrapText(ctx, levelText(lv.id).name, w - 32, 18, 'bold');
     nameLines.slice(0, 2).forEach((l, k) => drawText(ctx, l, x + 16, y + 156 + k * 22, { size: 18, color: PAL.uiGold }));
     if (unlocked) {
       roundRect(ctx, x + 16, y + h - 48, w - 32, 36, 10);
@@ -580,21 +626,21 @@ export class UI {
       ctx.strokeStyle = 'rgba(255,255,255,0.3)';
       ctx.lineWidth = 2;
       ctx.stroke();
-      drawText(ctx, stars > 0 ? 'Играть снова' : 'Играть', x + w / 2, y + h - 30, { size: 17, align: 'center' });
+      drawText(ctx, stars > 0 ? t('levels.replay') : t('levels.play'), x + w / 2, y + h - 30, { size: 17, align: 'center' });
       this.overlayButtons.push({ x, y, w, h, onTap: () => g.chooseLevel(i) });
     } else {
       roundRect(ctx, x, y, w, h, 18);
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fill();
       this.drawLock(ctx, x + w / 2, y + h / 2 - 22, 18);
-      drawText(ctx, 'Пройди предыдущий уровень', x + w / 2, y + h / 2 + 22, { size: 14, align: 'center', weight: 'normal', stroke: null });
+      drawText(ctx, t('levels.locked'), x + w / 2, y + h / 2 + 22, { size: 14, align: 'center', weight: 'normal', stroke: null });
     }
   }
 
   private drawLevels(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
     this.dim(ctx);
-    drawText(ctx, GAME_TITLE, 640, 34, { size: 30, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
+    drawText(ctx, gameTitle(), 640, 34, { size: 30, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
     const cw = 300;
     const ch = 236;
     const gap = 30;
@@ -603,15 +649,16 @@ export class UI {
       const n = act.to - act.from + 1;
       const total = n * cw + (n - 1) * gap;
       const x0 = (LOGICAL_W - total) / 2;
-      drawText(ctx, act.title, x0 + 4, y0, { size: 15, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.85)' });
+      drawText(ctx, actTitle(a), x0 + 4, y0, { size: 15, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.85)' });
       for (let k = 0; k < n; k++) {
         this.levelCard(ctx, LEVELS[act.from + k], act.from + k, x0 + k * (cw + gap), y0 + 14, cw, ch);
       }
     });
     const free = freeStars(g.progress);
-    this.bigButton(ctx, 640, 680, 330, 44, `Улучшения колонии · ${free} ★`, () => g.toPerks(), free > 0 ? '#3c8a2b' : 'rgba(90,60,30,0.9)', 18);
-    drawText(ctx, `Сложность: ${g.difficulty.name.toLowerCase()} (меняется перед уровнем)`, 300, 680, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
-    const label = g.resetArmed ? 'Точно сбросить? Ещё раз' : 'Сбросить прогресс';
+    this.bigButton(ctx, 640, 680, 330, 44, t('levels.perks', free), () => g.toPerks(), free > 0 ? '#3c8a2b' : 'rgba(90,60,30,0.9)', 18);
+    this.bigButton(ctx, 1150, 34, 180, 40, t('levels.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 16);
+    drawText(ctx, t('levels.difficulty', difficultyText(g.difficulty.id).name.toLowerCase()), 300, 680, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
+    const label = g.resetArmed ? t('levels.resetConfirm') : t('levels.reset');
     drawText(ctx, label, 980, 680, { size: 14, align: 'center', weight: 'normal', stroke: null, color: g.resetArmed ? PAL.uiRed : 'rgba(246,230,200,0.55)' });
     this.overlayButtons.push({ x: 860, y: 662, w: 240, h: 36, onTap: () => g.resetProgressTap() });
   }
@@ -622,8 +669,8 @@ export class UI {
     this.dim(ctx);
     const free = freeStars(g.progress);
     const total = totalStars(g.progress);
-    drawText(ctx, 'Улучшения колонии', 640, 46, { size: 34, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
-    drawText(ctx, `Свободных звёзд: ${free} из ${total}. Звёзды дают победы на уровнях, улучшения действуют везде.`, 640, 84, {
+    drawText(ctx, t('perks.title'), 640, 46, { size: 34, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
+    drawText(ctx, t('perks.free', free, total), 640, 84, {
       size: 16, align: 'center', weight: 'normal', stroke: null,
     });
     const colW = 560;
@@ -637,12 +684,13 @@ export class UI {
       const maxed = rank >= p.maxRank;
       const can = !maxed && free >= p.cost;
       this.panel(ctx, x, y, colW, rowH, 16);
-      drawText(ctx, p.name, x + 18, y + 24, { size: 19, color: PAL.uiGold });
-      drawText(ctx, p.desc(Math.max(1, rank)), x + 18, y + 50, { size: 14, weight: 'normal', stroke: null });
+      const px = perkText(p.id);
+      drawText(ctx, px.name, x + 18, y + 24, { size: 19, color: PAL.uiGold });
+      drawText(ctx, px.desc(Math.max(1, rank)), x + 18, y + 50, { size: 14, weight: 'normal', stroke: null });
       if (!maxed) {
-        drawText(ctx, `Следующий ранг: ${p.desc(rank + 1)}`, x + 18, y + 72, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.65)' });
+        drawText(ctx, t('perks.next', px.desc(rank + 1)), x + 18, y + 72, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.65)' });
       } else {
-        drawText(ctx, 'Максимальный ранг', x + 18, y + 72, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.65)' });
+        drawText(ctx, t('perks.maxRank'), x + 18, y + 72, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.65)' });
       }
       for (let r = 0; r < p.maxRank; r++) {
         circle(ctx, x + colW - 150 + r * 20, y + 26, 7);
@@ -660,12 +708,12 @@ export class UI {
       ctx.strokeStyle = 'rgba(255,255,255,0.25)';
       ctx.lineWidth = 2;
       ctx.stroke();
-      drawText(ctx, maxed ? 'Макс.' : `+1 за ${p.cost} ★`, bx + 54, by + 21, { size: 16, align: 'center', color: can || maxed ? PAL.uiLight : 'rgba(246,230,200,0.5)' });
+      drawText(ctx, maxed ? t('perks.max') : t('perks.buy', p.cost), bx + 54, by + 21, { size: 16, align: 'center', color: can || maxed ? PAL.uiLight : 'rgba(246,230,200,0.5)' });
       if (can) this.overlayButtons.push({ x: bx, y: by, w: 108, h: 42, onTap: () => g.buyPerk(p.id) });
     });
-    this.bigButton(ctx, 540, 600, 220, 56, 'К уровням', () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
-    this.bigButton(ctx, 790, 600, 260, 56, 'Вернуть все звёзды', () => g.refundPerks(), 'rgba(90,60,30,0.9)', 20);
-    drawText(ctx, 'Звёзды возвращаются без потерь: пробуй разные наборы под разные уровни.', 640, 656, {
+    this.bigButton(ctx, 540, 600, 220, 56, t('perks.back'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
+    this.bigButton(ctx, 790, 600, 260, 56, t('perks.refund'), () => g.refundPerks(), 'rgba(90,60,30,0.9)', 20);
+    drawText(ctx, t('perks.refundHint'), 640, 656, {
       size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.6)',
     });
   }
@@ -675,16 +723,17 @@ export class UI {
     const lv = g.level;
     this.dim(ctx);
     this.panel(ctx, 240, 80, 800, 570, 26);
-    drawText(ctx, `Уровень ${g.levelIndex + 1}`, 640, 120, { size: 18, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
-    drawText(ctx, lv.name, 640, 160, { size: 40, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
-    const lines = wrapText(ctx, lv.story, 700, 19);
+    const lx = levelText(lv.id);
+    drawText(ctx, t('intro.level', g.levelIndex + 1), 640, 120, { size: 18, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
+    drawText(ctx, lx.name, 640, 160, { size: 40, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
+    const lines = wrapText(ctx, lx.story, 700, 19);
     lines.forEach((l, i) => drawText(ctx, l, 640, 216 + i * 27, { size: 19, align: 'center', weight: 'normal', stroke: null }));
-    drawText(ctx, `${lv.waves.length} волн · ${lv.paths.length === 1 ? 'одна тропа' : `${lv.paths.length} тропы`} · ${g.world.plots.length} клеток под застройку · ${g.world.startLives} личинок`, 640, 380, {
+    drawText(ctx, t('intro.stats', lv.waves.length, lv.paths.length === 1 ? t('intro.onePath') : t('intro.paths', lv.paths.length), g.world.plots.length, g.world.startLives), 640, 380, {
       size: 16, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)',
     });
     // Сложность: три кнопки, выбор запоминается между уровнями.
     const cur = g.difficulty;
-    drawText(ctx, 'Сложность', 640, 416, { size: 15, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
+    drawText(ctx, t('intro.difficulty'), 640, 416, { size: 15, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
     const bw = 200;
     const bh = 42;
     const gap = 12;
@@ -698,16 +747,16 @@ export class UI {
       ctx.strokeStyle = on ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)';
       ctx.lineWidth = 2;
       ctx.stroke();
-      drawText(ctx, d.name, x + bw / 2, 432 + bh / 2, { size: 18, align: 'center', color: on ? PAL.uiLight : 'rgba(246,230,200,0.7)' });
+      drawText(ctx, difficultyText(d.id).name, x + bw / 2, 432 + bh / 2, { size: 18, align: 'center', color: on ? PAL.uiLight : 'rgba(246,230,200,0.7)' });
       this.overlayButtons.push({ x, y: 432, w: bw, h: bh, onTap: () => g.setDifficulty(d.id) });
     });
-    drawText(ctx, cur.desc, 640, 494, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
-    this.bigButton(ctx, 700, 544, 260, 60, 'В бой!', () => g.start());
-    this.bigButton(ctx, 450, 544, 200, 60, 'К уровням', () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
-    drawText(ctx, 'Тап по свободной клетке строит башню. Заклинания внизу слева: тап по кнопке, потом по точке на поле.', 640, 606, {
+    drawText(ctx, difficultyText(cur.id).desc, 640, 494, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
+    this.bigButton(ctx, 700, 544, 260, 60, t('intro.fight'), () => g.start());
+    this.bigButton(ctx, 450, 544, 200, 60, t('intro.back'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
+    drawText(ctx, t('intro.hint1'), 640, 606, {
       size: 15, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)',
     });
-    drawText(ctx, 'Q, W, E: заклинания. Пробел: пауза. N: следующая волна. Esc или правая кнопка: отмена.', 640, 628, {
+    drawText(ctx, t('intro.hint2'), 640, 628, {
       size: 15, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)',
     });
   }
@@ -717,7 +766,7 @@ export class UI {
     const won = g.state === 'won';
     this.dim(ctx);
     this.panel(ctx, 320, 150, 640, 420, 26);
-    drawText(ctx, won ? 'Муравейник выстоял!' : 'Муравейник пал...', 640, 210, { size: 40, align: 'center', color: won ? PAL.uiGold : PAL.uiRed, strokeWidth: 7 });
+    drawText(ctx, won ? t('end.won') : t('end.lost'), 640, 210, { size: 40, align: 'center', color: won ? PAL.uiGold : PAL.uiRed, strokeWidth: 7 });
     if (won) {
       for (let s = 0; s < 3; s++) {
         const filled = s < g.earnedStars;
@@ -725,27 +774,25 @@ export class UI {
         drawStar(ctx, 640 - 70 + s * 70, 290 + bounce, 28, filled);
       }
     }
-    const finale = !won ? ''
-      : g.levelIndex === 2 ? ' Акт 1 завершён: утром колония сама выступает в поход на термитник.'
-        : g.levelIndex === LEVELS.length - 1 ? ' Термитник пал, королева мертва. Поход окончен, колония возвращается домой с победой.'
-          : '';
-    const diff = `Сложность: ${g.difficulty.name.toLowerCase()}.`;
+    const finale = !won ? '' : g.levelIndex === 2 ? t('end.finaleAct1') : g.levelIndex === LEVELS.length - 1 ? t('end.finaleAll') : '';
+    const diff = t('end.difficulty', difficultyText(g.difficulty.id).name.toLowerCase());
     const sub = won
-      ? `Все ${g.waves.total} волн отбиты, личинок уцелело ${g.lives} из ${g.world.startLives}. ${diff}${finale}`
-      : `Продержались волн: ${g.waves.index} из ${g.waves.total}. ${diff} Попробуй казарму на развилке и не копи заклинания${g.difficulty.id !== 'easy' ? ', или выбери сложность полегче' : ''}.`;
+      ? t('end.wonText', g.waves.total, g.lives, g.world.startLives, diff, finale)
+      : t('end.lostText', g.waves.index, g.waves.total, diff, g.difficulty.id !== 'easy' ? t('end.easier') : '');
     const lines = wrapText(ctx, sub, 560, 19);
     lines.forEach((l, i) => drawText(ctx, l, 640, (won ? 350 : 290) + i * 26, { size: 19, align: 'center', weight: 'normal', stroke: null }));
-    this.bigButton(ctx, 520, 500, 220, 64, 'К уровням', () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
-    this.bigButton(ctx, 770, 500, 220, 64, 'Ещё раз', () => g.start());
+    this.bigButton(ctx, 520, 500, 220, 64, t('end.back'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
+    this.bigButton(ctx, 770, 500, 220, 64, t('end.again'), () => g.start());
   }
 
   private drawPause(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
     this.dim(ctx);
-    drawText(ctx, 'Пауза', 640, 300, { size: 54, align: 'center', color: PAL.uiGold, strokeWidth: 8 });
-    this.bigButton(ctx, 540, 400, 220, 64, 'Продолжить', () => g.togglePause(), '#3c8a2b', 22);
-    this.bigButton(ctx, 790, 400, 220, 64, 'К уровням', () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
-    drawText(ctx, 'Тап мимо кнопок или Пробел тоже продолжают игру', 640, 470, { size: 16, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
+    drawText(ctx, t('pause.title'), 640, 300, { size: 54, align: 'center', color: PAL.uiGold, strokeWidth: 8 });
+    this.bigButton(ctx, 400, 400, 220, 64, t('pause.resume'), () => g.togglePause(), '#3c8a2b', 22);
+    this.bigButton(ctx, 640, 400, 220, 64, t('pause.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 22);
+    this.bigButton(ctx, 880, 400, 220, 64, t('pause.levels'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
+    drawText(ctx, t('pause.hint'), 640, 470, { size: 16, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
     this.overlayButtons.push({ x: 0, y: 0, w: LOGICAL_W, h: LOGICAL_H, onTap: () => g.togglePause() });
   }
 }

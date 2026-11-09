@@ -18,9 +18,11 @@ import {
 import type { Builder, Construction } from './construction';
 import { installSprites } from '../render/sprites';
 import { drawSplash, drawSplashSign } from '../render/splash';
+import { detectLang, gameTitle, getLang, setLang, t, targetText, type Lang } from './i18n';
+import { audio } from '../engine/audio';
 import splashUrl from '../assets/sprites/splash.webp';
 
-export type GameState = 'title' | 'levels' | 'perks' | 'intro' | 'playing' | 'won' | 'lost';
+export type GameState = 'title' | 'levels' | 'perks' | 'intro' | 'settings' | 'playing' | 'won' | 'lost';
 export type Selection =
   | { type: 'plot'; plot: Plot }
   | { type: 'tower'; tower: Tower }
@@ -56,6 +58,8 @@ export class Game {
   earnedStars = 0;
   /** Первый тап по «Сбросить прогресс» только предупреждает. */
   resetArmed = false;
+  /** Откуда открыли настройки: туда и вернёмся. */
+  settingsFrom: GameState = 'title';
 
   private bg: { canvas: HTMLCanvasElement; k: number } | null = null;
   /** Заставка главного меню, печётся один раз; перепекается, когда догрузится картина. */
@@ -67,6 +71,9 @@ export class Game {
 
   constructor(readonly screen: Screen, readonly input: Input) {
     installSprites();
+    setLang(this.progress.settings.lang ?? detectLang());
+    this.syncLangDom();
+    audio.setVolumes(this.progress.settings.music, this.progress.settings.sfx);
     this.splashImg.onload = () => { this.splash = null; };
     this.splashImg.src = splashUrl;
     this.world = this.makeWorld(LEVELS[0]);
@@ -104,6 +111,7 @@ export class Game {
   private makeWorld(level: LevelDef): World {
     const w = new World(level, this.perks, this.difficulty);
     w.targetMode = this.progress.targetMode;
+    w.onSound = (id) => audio.play(id);
     w.onLivesLost = () => { this.hurtFlash = 0.7; };
     return w;
   }
@@ -172,6 +180,47 @@ export class Game {
     this.state = 'perks';
   }
 
+  toSettings(): void {
+    if (this.state === 'settings') return;
+    this.settingsFrom = this.state;
+    this.state = 'settings';
+  }
+
+  closeSettings(): void {
+    if (this.state === 'settings') this.state = this.settingsFrom;
+  }
+
+  setLang(l: Lang): void {
+    setLang(l);
+    this.progress.settings.lang = l;
+    saveProgress(this.progress);
+    this.syncLangDom();
+  }
+
+  /** Громкость шагами по 5%: сразу в движок и в сохранение. */
+  setMusic(v: number): void {
+    this.progress.settings.music = Game.volume(v);
+    saveProgress(this.progress);
+    audio.setVolumes(this.progress.settings.music, this.progress.settings.sfx);
+  }
+
+  setSfx(v: number): void {
+    this.progress.settings.sfx = Game.volume(v);
+    saveProgress(this.progress);
+    audio.setVolumes(this.progress.settings.music, this.progress.settings.sfx);
+    audio.play('click');
+  }
+
+  private static volume(v: number): number {
+    return Math.min(1, Math.max(0, Math.round(v * 20) / 20));
+  }
+
+  /** Заголовок вкладки и атрибут lang на текущем языке. */
+  private syncLangDom(): void {
+    document.title = gameTitle();
+    document.documentElement.lang = getLang();
+  }
+
   start(): void {
     this.reset();
     this.state = 'playing';
@@ -204,6 +253,7 @@ export class Game {
 
   private onWin(): void {
     this.state = 'won';
+    audio.play('win');
     this.selected = null;
     const frac = this.lives / Math.max(1, this.world.startLives);
     this.earnedStars = frac >= 0.9 ? 3 : frac >= 0.5 ? 2 : 1;
@@ -244,7 +294,7 @@ export class Game {
     this.world.targetMode = next.id;
     this.progress.targetMode = next.id;
     saveProgress(this.progress);
-    this.effects.text(`Цель башен: ${next.name.toLowerCase()}`, 975, 618, PAL.uiGold, 18);
+    this.effects.text(t('fx.target', targetText(next.id).name.toLowerCase()), 975, 618, PAL.uiGold, 18);
   }
 
   sellTower(t: Tower): void {
@@ -272,7 +322,7 @@ export class Game {
       return;
     }
     if (!this.world.spells.ready(i)) {
-      this.effects.text(`Перезарядка ${Math.ceil(this.world.spells.cooldowns[i])} с`, 164, 596, PAL.uiRed, 18);
+      this.effects.text(t('fx.cooldown', Math.ceil(this.world.spells.cooldowns[i])), 164, 596, PAL.uiRed, 18);
       return;
     }
     this.armedSpell = i;
@@ -282,10 +332,10 @@ export class Game {
 
   private onTap(p: Vec): void {
     if (this.state !== 'playing' || this.paused) {
-      this.ui.tapOverlay(p);
+      if (this.ui.tapOverlay(p)) audio.play('click');
       return;
     }
-    if (this.ui.tap(p)) return;
+    if (this.ui.tap(p)) { audio.play('click'); return; }
     this.pendingSpec = null;
     if (this.armedSpell !== null) {
       // Цель заклинания: любая точка поля ниже верхней панели.
@@ -319,7 +369,8 @@ export class Game {
       return;
     }
     if (k === 'Escape') {
-      if (this.state === 'playing') { this.selected = null; this.pendingSpec = null; this.armedSpell = null; }
+      if (this.state === 'settings') this.closeSettings();
+      else if (this.state === 'playing') { this.selected = null; this.pendingSpec = null; this.armedSpell = null; }
       else if (this.state === 'intro' || this.state === 'won' || this.state === 'lost' || this.state === 'perks') this.toLevels();
       return;
     }
@@ -356,6 +407,7 @@ export class Game {
 
   update(dt: number): void {
     this.clock += dt;
+    audio.setMusic(this.state === 'playing' || (this.state === 'settings' && this.settingsFrom === 'playing') ? 'battle' : 'menu');
     if (this.hurtFlash > 0) this.hurtFlash -= dt;
     if (this.state !== 'playing' || this.paused) {
       this.effects.update(dt);
@@ -365,6 +417,7 @@ export class Game {
     if (this.world.state === 'won') this.onWin();
     else if (this.world.state === 'lost') {
       this.state = 'lost';
+      audio.play('lose');
       this.selected = null;
     }
   }
@@ -374,7 +427,7 @@ export class Game {
   render(): void {
     const ctx = this.screen.ctx;
     this.screen.begin();
-    if (this.state === 'title') {
+    if (this.state === 'title' || (this.state === 'settings' && this.settingsFrom === 'title')) {
       // Заставка: диорама без игрового мира, поверх только текст и кнопка.
       this.drawSplash(ctx);
       this.ui.draw(ctx);
@@ -507,8 +560,8 @@ export class Game {
     ctx.fillStyle = PAL.ui;
     ctx.fillRect(-8, -15, 16, 28);
     ctx.restore();
-    drawText(ctx, 'Поверни телефон', x + 70, y + 24, { size: 18, color: PAL.uiGold, stroke: null });
-    drawText(ctx, 'горизонтально: так удобнее играть', x + 70, y + 46, { size: 14, weight: 'normal', stroke: null });
+    drawText(ctx, t('portrait.title'), x + 70, y + 24, { size: 18, color: PAL.uiGold, stroke: null });
+    drawText(ctx, t('portrait.sub'), x + 70, y + 46, { size: 14, weight: 'normal', stroke: null });
   }
 
   private drawSplash(ctx: CanvasRenderingContext2D): void {

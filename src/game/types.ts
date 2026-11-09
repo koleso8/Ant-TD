@@ -42,6 +42,13 @@ export interface Blocker {
   stagger(dur: number, fromX: number, fromY: number): void;
 }
 
+/** Звуковые события ядра: Game превращает их в синтезированные эффекты, симуляция игнорирует. */
+export type SoundId =
+  | 'click' | 'build' | 'hammer' | 'done' | 'upgrade' | 'sell' | 'noGold'
+  | 'shotAcid' | 'shotCatapult' | 'impact' | 'acidHit' | 'spore' | 'hit'
+  | 'die' | 'dieBig' | 'leak' | 'wave' | 'spellAcid' | 'spellRetinue' | 'spellSpores'
+  | 'summon' | 'ability' | 'fell' | 'stomp' | 'win' | 'lose';
+
 /** То, что сущностям нужно знать об игре. Game реализует этот интерфейс. */
 export interface GameCtx {
   readonly paths: Path[];
@@ -64,4 +71,6 @@ export interface GameCtx {
   readonly bountyMul: number;
   /** Общий для всех башен режим выбора цели. */
   readonly targetMode: TargetMode;
+  /** Звуковое событие; в симуляции ничего не делает. */
+  sound(id: SoundId): void;
 }

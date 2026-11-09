@@ -5,6 +5,7 @@ import { Soldier, type SoldierHost } from './soldier';
 import type { Hero } from './hero';
 import type { Perks } from './perks';
 import { PAL } from '../render/palette';
+import { spellText } from './i18n';
 
 /**
  * Заклинания колонии: три кнопки в хотбаре с перезарядкой, цель выбирается тапом по полю.
@@ -65,7 +66,8 @@ export class SpellBook {
     }
     g.effects.ring(p.x, p.y, def.radius, 'rgba(155,229,58,0.95)', 0.5);
     g.effects.burst(p.x, p.y, 26, PAL.acid, 220, 4, 0.6, 320);
-    g.effects.text(def.name, p.x, p.y - 40, PAL.uiGreen, 20);
+    g.effects.text(spellText(def.id).name, p.x, p.y - 40, PAL.uiGreen, 20);
+    g.sound('spellAcid');
   }
 
   /** Дружина: Жвал и двое солдат выходят в точку и держат врагов, пока не выйдет время. */
@@ -84,7 +86,8 @@ export class SpellBook {
     this.recruits = [new Soldier(host, 1), new Soldier(host, 2)];
     this.retinueLeft = dur;
     g.effects.ring(p.x, p.y, def.radius, 'rgba(255,217,90,0.9)', 0.5);
-    g.effects.text(def.name, p.x, p.y - 44, PAL.uiGold, 20);
+    g.effects.text(spellText(def.id).name, p.x, p.y - 44, PAL.uiGold, 20);
+    g.sound('spellRetinue');
   }
 
   /** Споровая туча: облако грибницы в точке, замедляет, травит и оглушает на входе. */
@@ -95,6 +98,7 @@ export class SpellBook {
       slow: 0.5, dps: Math.round(10 * this.perks.sporeMul), poisonDur: 3, stun: 1, stunned: new Set(), variant: 1,
     });
     g.effects.sporePuff(p.x, p.y);
-    g.effects.text(def.name, p.x, p.y - 40, PAL.spore, 20);
+    g.effects.text(spellText(def.id).name, p.x, p.y - 40, PAL.spore, 20);
+    g.sound('spellSpores');
   }
 }

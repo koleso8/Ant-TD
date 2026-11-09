@@ -36,7 +36,10 @@ export class AcidGlob implements Projectile {
       this.x = this.tx;
       this.y = this.ty;
       this.dead = true;
-      if (!this.target.dead) this.target.damage(this.dmg, 'physical', g, false, this.pierce, 'acid');
+      if (!this.target.dead) {
+        this.target.damage(this.dmg, 'physical', g, false, this.pierce, 'acid');
+        g.sound('acidHit');
+      }
       g.effects.acidHit(this.x, this.y);
       return;
     }
@@ -80,6 +83,7 @@ export class Seed implements Projectile {
 
   private explode(g: GameCtx): void {
     g.effects.explosion(this.x1, this.y1, this.splash);
+    g.sound('impact');
     for (const e of g.enemies) {
       if (e.dead || e.def.flying) continue;
       const d = dist(e.x, e.y, this.x1, this.y1);

@@ -1,9 +1,17 @@
 import { DIFFICULTIES, TARGET_MODES, type DifficultyId, type TargetMode } from './config';
+import { LANGS, type Lang } from './i18n';
 import { PERKS, starsSpent } from './perks';
 
-/** Сохранение прогресса в localStorage: звёзды по уровням, перки, выбранная сложность. */
+/** Настройки игрока: язык (null — определить по браузеру) и громкость 0..1. */
+export interface Settings {
+  lang: Lang | null;
+  music: number;
+  sfx: number;
+}
+
+/** Сохранение прогресса в localStorage: звёзды по уровням, перки, выбранная сложность, настройки. */
 export interface Progress {
-  version: 3;
+  version: 4;
   stars: Record<string, number>;
   perks: Record<string, number>;
   /** Выбранная сложность: запоминается между уровнями. */
@@ -12,6 +20,7 @@ export interface Progress {
   beaten: Record<string, DifficultyId>;
   /** Общий режим цели башен: запоминается между уровнями. */
   targetMode: TargetMode;
+  settings: Settings;
 }
 
 const KEY = 'anthill-td-progress';
@@ -20,8 +29,16 @@ function validDifficulty(id: unknown): DifficultyId | null {
   return DIFFICULTIES.some((d) => d.id === id) ? (id as DifficultyId) : null;
 }
 
+export function defaultSettings(): Settings {
+  return { lang: null, music: 0.6, sfx: 0.8 };
+}
+
 export function defaultProgress(): Progress {
-  return { version: 3, stars: {}, perks: {}, difficulty: 'normal', beaten: {}, targetMode: 'first' };
+  return { version: 4, stars: {}, perks: {}, difficulty: 'normal', beaten: {}, targetMode: 'first', settings: defaultSettings() };
+}
+
+function volume(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
 }
 
 export function loadProgress(): Progress {
@@ -39,13 +56,20 @@ export function loadProgress(): Progress {
       const v = validDifficulty(d);
       if (v) beaten[id] = v;
     }
+    const s: Partial<Settings> = p.settings ?? {};
+    const def = defaultSettings();
     return {
-      version: 3,
+      version: 4,
       stars: { ...(p.stars ?? {}) },
       perks,
       difficulty: validDifficulty(p.difficulty) ?? 'normal',
       beaten,
       targetMode: TARGET_MODES.some((m) => m.id === p.targetMode) ? (p.targetMode as TargetMode) : 'first',
+      settings: {
+        lang: LANGS.some((l) => l.id === s.lang) ? (s.lang as Lang) : null,
+        music: volume(s.music, def.music),
+        sfx: volume(s.sfx, def.sfx),
+      },
     };
   } catch {
     return defaultProgress();

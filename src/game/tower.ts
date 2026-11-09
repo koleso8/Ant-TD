@@ -64,11 +64,6 @@ export class Tower {
     this.statsCache = { key, value };
     return value;
   }
-  /** Название для панели: базовое или имя специализации. */
-  get displayName(): string {
-    const s = this.specDef;
-    return s ? `${this.def.name}: ${s.name}` : this.def.name;
-  }
   get upgradeCost(): number | null {
     return !this.building && this.level < MAX_BASE_LEVEL ? this.def.levels[this.level].cost : null;
   }
@@ -131,6 +126,7 @@ export class Tower {
       if (this.buildLeft <= 0) {
         this.buildLeft = 0;
         this.built = true;
+        g.sound('done');
         g.effects.build(this.x, this.y);
       } else if (this.kind !== 'barracks' || !this.built) {
         return;
@@ -148,6 +144,7 @@ export class Tower {
         if (this.cooldown <= 0) {
           this.cooldown = this.stats.interval ?? 1;
           this.fireTime = g.time;
+          g.sound('shotAcid');
           for (const target of targets) {
             const a = angleTo(this.x, muzzleY, target.x, target.visualY);
             const mx = this.x + Math.cos(a) * 10;
@@ -164,6 +161,7 @@ export class Tower {
         if (this.cooldown <= 0) {
           this.cooldown = this.stats.interval ?? 2;
           this.fireTime = g.time;
+          g.sound('shotCatapult');
           const T = this.stats.flightTime ?? 0.9;
           const lead = t.blockedBy || t.stunTimer > 0 ? 0 : t.speed * T;
           const p = t.path.at(t.progress + lead);
@@ -193,6 +191,7 @@ export class Tower {
           stun: spec?.cloudStun ?? 0, stunned: new Set(), variant: this.variant,
         });
         g.effects.sporePuff(this.x, this.y - 30);
+        g.sound('spore');
         break;
       }
       case 'barracks':

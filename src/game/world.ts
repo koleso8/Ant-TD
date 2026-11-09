@@ -2,7 +2,7 @@ import { dist, type Vec } from '../engine/math';
 import { CELL, DIFFICULTIES, HERO, LOGICAL_H, LOGICAL_W, TOWERS, type DifficultyDef, type EnemyKind, type TargetMode, type TowerKind } from './config';
 import type { LevelDef } from './levels';
 import { Path, snapWaypoints } from './path';
-import type { GameCtx, Plot, SporeCloud } from './types';
+import type { GameCtx, Plot, SoundId, SporeCloud } from './types';
 import { Enemy } from './enemy';
 import { Tower } from './tower';
 import { Hero } from './hero';
@@ -13,6 +13,7 @@ import { WaveManager } from './waves';
 import { Construction } from './construction';
 import { NO_PERKS, type Perks } from './perks';
 import { PAL } from '../render/palette';
+import { t as tr, towerText } from './i18n';
 
 export type WorldState = 'playing' | 'won' | 'lost';
 
@@ -52,6 +53,8 @@ export class World implements GameCtx {
   readonly stats: WorldStats = { leaksByWave: [], goldEarned: 0, damage: {}, heroDeaths: 0 };
   /** Game подсвечивает экран красным, когда враг дошёл до личинок. */
   onLivesLost: ((n: number) => void) | null = null;
+  /** Game озвучивает события ядра; симуляция оставляет null. */
+  onSound: ((id: SoundId) => void) | null = null;
   private heroWasDead = false;
 
   constructor(
@@ -129,7 +132,12 @@ export class World implements GameCtx {
     this.time += dt;
     this.waves.update(dt, this);
     for (const t of this.towers) t.update(dt, this);
-    for (const c of this.constructions) c.update(dt, (x, y) => this.effects.burst(x, y, 3, 'rgba(230,210,170,0.9)', 50, 2.5, 0.4, 60));
+    for (const c of this.constructions) {
+      c.update(dt, (x, y) => {
+        this.effects.burst(x, y, 3, 'rgba(230,210,170,0.9)', 50, 2.5, 0.4, 60);
+        this.sound('hammer');
+      });
+    }
     this.constructions = this.constructions.filter((c) => !c.done);
     this.hero.update(dt, this);
     this.spells.update(dt, this);
@@ -174,6 +182,7 @@ export class World implements GameCtx {
     this.stats.leaksByWave[w] = (this.stats.leaksByWave[w] ?? 0) + n;
     const a = this.level.anthill;
     this.effects.text(`-${n}`, a.x, a.y - 95, PAL.uiRed, 30);
+    this.sound('leak');
     this.onLivesLost?.(n);
     if (this.lives <= 0) this.state = 'lost';
   }
@@ -190,6 +199,10 @@ export class World implements GameCtx {
   /** Перк фуражиров: надбавка к награде за врага. */
   onEnemyKilled(e: Enemy): void {
     if (this.perks.bountyMul > 1) this.addGold(Math.round(e.def.bounty * (this.perks.bountyMul - 1)));
+  }
+
+  sound(id: SoundId): void {
+    this.onSound?.(id);
   }
 
   recordDamage(source: string, amount: number): void {
@@ -224,7 +237,8 @@ export class World implements GameCtx {
     if (plot.tower) return false;
     const cost = TOWERS[kind].levels[0].cost;
     if (this.gold < cost) {
-      this.effects.text('Мало нектара', plot.x, plot.y - 54, PAL.uiRed, 18);
+      this.effects.text(tr('fx.noNectar'), plot.x, plot.y - 54, PAL.uiRed, 18);
+      this.sound('noGold');
       return false;
     }
     this.gold -= cost;
@@ -232,6 +246,7 @@ export class World implements GameCtx {
     plot.tower = t;
     this.towers.push(t);
     this.startConstruction(t, false);
+    this.sound('build');
     return true;
   }
 
@@ -247,12 +262,14 @@ export class World implements GameCtx {
     const c = t.upgradeCost;
     if (c === null) return false;
     if (this.gold < c) {
-      this.effects.text('Мало нектара', t.x, t.y - 60, PAL.uiRed, 18);
+      this.effects.text(tr('fx.noNectar'), t.x, t.y - 60, PAL.uiRed, 18);
+      this.sound('noGold');
       return false;
     }
     this.gold -= c;
     t.upgrade();
     this.startConstruction(t, true);
+    this.sound('build');
     return true;
   }
 
@@ -260,13 +277,15 @@ export class World implements GameCtx {
     if (!t.canSpecialize) return false;
     const cost = t.def.specs[i].cost;
     if (this.gold < cost) {
-      this.effects.text('Мало нектара', t.x, t.y - 60, PAL.uiRed, 18);
+      this.effects.text(tr('fx.noNectar'), t.x, t.y - 60, PAL.uiRed, 18);
+      this.sound('noGold');
       return false;
     }
     this.gold -= cost;
     t.specialize(i);
     this.startConstruction(t, true);
-    this.effects.text(t.def.specs[i].name, t.x, t.y - 70, PAL.uiGold, 22);
+    this.sound('upgrade');
+    this.effects.text(towerText(t.kind).specs[i].name, t.x, t.y - 70, PAL.uiGold, 22);
     return true;
   }
 
@@ -274,6 +293,7 @@ export class World implements GameCtx {
     const v = t.sellValue;
     this.gold += v;
     this.effects.text(`+${v}`, t.x, t.y - 44, PAL.uiGold, 20);
+    this.sound('sell');
     t.construction?.cancel();
     t.destroy();
     t.plot.tower = null;

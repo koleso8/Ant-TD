@@ -4,6 +4,7 @@ import type { Blocker, GameCtx } from './types';
 import type { Enemy } from './enemy';
 import { drawDaze, drawHealthBar, drawHero, drawShadow } from '../render/art';
 import { PAL } from '../render/palette';
+import { heroText, t } from './i18n';
 
 /**
  * Герой Жвал: выходит на поле заклинанием «Дружина» на несколько секунд, держит одного врага
@@ -59,6 +60,7 @@ export class Hero implements Blocker {
     this.staggerTimer = 0;
     this.spin = 0;
     g.effects.ring(p.x, p.y, 44, 'rgba(255,240,200,0.9)', 0.5);
+    g.sound('summon');
   }
 
   /** Время вышло: уходит обратно в муравейник. */
@@ -82,7 +84,8 @@ export class Hero implements Blocker {
     }
     g.effects.ring(this.x, this.y, HERO.abilityRadius, 'rgba(255,220,120,0.95)', 0.45);
     g.effects.burst(this.x, this.y, 14, 'rgba(160,110,60,0.9)', 160, 5, 0.5, 200);
-    g.effects.text(`${HERO.abilityName}!`, this.x, this.y - 44, PAL.uiGold, 20);
+    g.effects.text(`${heroText().ability}!`, this.x, this.y - 44, PAL.uiGold, 20);
+    g.sound('ability');
     return true;
   }
 
@@ -198,7 +201,8 @@ export class Hero implements Blocker {
       this.hp = 0;
       this.dead = true;
       g.effects.death(this.x, this.y, '#d4573c');
-      g.effects.text(`${HERO.name} пал!`, this.x, this.y - 40, PAL.uiRed, 22);
+      g.effects.text(t('fx.fell', heroText().name), this.x, this.y - 40, PAL.uiRed, 22);
+      g.sound('fell');
       this.dropTarget();
     }
   }
