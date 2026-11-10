@@ -1361,6 +1361,10 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
   const inCore = (x: number, y: number) => x >= 0 && x <= w && y >= 0 && y <= h;
   // Во сколько раз поля больше кадра: столько же декора на ту же площадь.
   const extra = Math.max(0, ((v.x1 - v.x0) * (v.y1 - v.y0)) / (w * h) - 1);
+  // Карта больше кадра 1280x720: декора больше, но реже, чем на обычной карте: её чаще смотрят
+  // издалека, и мелкий декор сливался бы в рябь. У обычных карт ровно 1.
+  const dens = Math.pow(Math.max(1, (w * h) / (1280 * 720)), 0.7);
+  const core = (n: number) => Math.round(n * dens);
   const marginCount = (n: number) => Math.round(n * extra);
   const marginPoint = (pad: number): Vec | null => {
     for (let i = 0; i < 16; i++) {
@@ -1380,7 +1384,7 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
     ell(ctx, p.x, p.y, mr.range(40, 130), mr.range(20, 60), mr.range(0, TAU));
     ctx.fill();
   }
-  for (let i = 0; i < 55; i++) {
+  for (let i = 0; i < core(55); i++) {
     ctx.fillStyle = rng.next() < 0.5 ? hexA(theme.grassLight, 0.3) : hexA(theme.grassDark, 0.3);
     ell(ctx, rng.range(0, w), rng.range(0, h), rng.range(40, 130), rng.range(20, 60), rng.range(0, TAU));
     ctx.fill();
@@ -1406,7 +1410,7 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
   const inWall = (y: number) => !!theme.wall && y < theme.wall.h + 30;
   if (theme.water) drawWater(ctx, w, theme.water, rng, v, mr);
   if (theme.oak) drawOak(ctx, w, rng, v, mr);
-  for (let i = 0; i < 170; i++) {
+  for (let i = 0; i < core(170); i++) {
     const x = rng.range(10, w - 10);
     const y = rng.range(90, h - 10);
     if (!farFromPath(x, y, 42) || inWater(y) || inWall(y)) continue;
@@ -1514,7 +1518,7 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
       else leaf(ctx, x, y, r.range(9, 14), r.range(4, 6), r.range(0, TAU), r.pick(['#c77f3a', '#d9a24a', '#9bbf3f']), 'rgba(60,30,5,0.5)');
     }
   };
-  for (let i = 0; i < 130; i++) {
+  for (let i = 0; i < core(130); i++) {
     const x = rng.range(16, w - 16);
     const y = rng.range(16, h - 16);
     if (decorOk(x, y)) decorAt(rng, x, y);

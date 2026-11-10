@@ -15,6 +15,8 @@ function boot(): void {
   const screen = new Screen();
   const input = new Input(screen);
   const game = new Game(screen, input);
+  // Дев: игра доступна из консоли для проверок; в сборку не попадает.
+  if (import.meta.env.DEV) (window as unknown as { game: Game }).game = game;
 
   const STEP = 1 / 60;
   let last = performance.now();

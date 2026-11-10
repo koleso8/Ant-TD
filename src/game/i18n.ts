@@ -1,5 +1,6 @@
 import { DIFFICULTIES, HERO, SPELLS, TARGET_MODES, TOWERS, type DifficultyId, type SpellId, type TargetMode, type TowerKind } from './config';
-import { ACTS, GAME_TITLE, LEVELS } from './levels';
+import { ACTS, GAME_TITLE, LEVELS, TUTORIAL } from './levels';
+import { ENDLESS } from './endless';
 import { PERKS } from './perks';
 
 /**
@@ -123,6 +124,55 @@ const UI_RU = {
   'stats.barracks': '{0} солдата · здоровье {1} · урон {2}–{3} · возрождение {4} с',
   'stats.catapult': 'Урон {0}–{1} по площади {2} · радиус {3} · только по земле',
   'stats.spore': 'Замедление {0}% · яд {1}/с · радиус {2} · яд игнорирует панцирь',
+  'hud.waveEndless': 'Волна {0}',
+  'hud.best': 'рекорд {0}',
+  'wave.wait': 'Волна подождёт',
+  'levels.prologue': 'Пролог',
+  'levels.tutorial': 'Обучение',
+  'levels.tutorialDone': 'пройдено',
+  'levels.challenge': 'Испытание',
+  'levels.record': 'Рекорд: волна {0}',
+  'levels.noRecord': 'Рекорда пока нет',
+  'levels.lockedTutorial': 'Пройди обучение',
+  'intro.tutorial': 'Обучение',
+  'intro.tutorialStats': '5 коротких волн · одна тропа · подсказки прямо на поле',
+  'intro.skip': 'Пропустить обучение',
+  'intro.endless': 'Испытание',
+  'intro.endlessStats': 'Волнам нет конца · одна тропа спиралью к муравейнику · {0} клеток под застройку · {1} личинок',
+  'intro.record': 'Рекорд ({0}): отбито волн {1}, врагов {2}',
+  'intro.noRecord': 'На этой сложности рекорда пока нет',
+  'end.tutorialWon': 'Обучение пройдено!',
+  'end.tutorialText': 'Теперь ты знаешь всё нужное. Впереди настоящая осада, «Опушка у старого дуба». За победы на уровнях дают звёзды, а звёзды тратятся на улучшения колонии. Открыта и бесконечная осада: там ставят рекорды.',
+  'end.march': 'В поход!',
+  'end.endless': 'Осада окончена',
+  'end.endlessText': 'Отбито волн: {0}, повержено врагов: {1}. {2}',
+  'end.newRecord': 'Новый рекорд!',
+  'end.record': 'Рекорд: {0} волн.',
+  'endless.hint': 'Тяни карту, чтобы осмотреться; щипок или колесо меняют масштаб',
+  'fx.gift': '+{0} нектара на учёбу',
+  'tut.acidCell': 'Враги идут по тропе к муравейнику. Тапни по подсвеченной клетке у поворота: здесь встанет башня.',
+  'tut.acidPick': 'Выбери «Стрелки»: муравьи плюются кислотой и достают даже летающих.',
+  'tut.wave1': 'Рабочие уже строят башню. Зови первую волну кнопкой «В бой!»: чем раньше, тем больше бонус нектара.',
+  'tut.loot': 'За каждого врага капает нектар (вверху слева). Враг, дошедший до муравейника, съедает личинку.',
+  'tut.barracksCell': 'Пауки крепче термитов. Тапни по клетке под тропой: там встанет казарма.',
+  'tut.barracksPick': 'Выбери «Казарму»: солдаты выйдут на тропу и задержат врага, пока башни его добивают.',
+  'tut.wave2': 'Зови вторую волну.',
+  'tut.hold': 'Солдаты держат врага на тропе. Павшие солдаты сами возвращаются из казармы.',
+  'tut.upgradeTower': 'Нектар копится. Тапни по стрелкам, чтобы улучшить башню.',
+  'tut.upgradePick': 'Жми стрелку вверх: урон и радиус растут. После 3-го уровня башня выбирает специализацию.',
+  'tut.sporeCell': 'Дальше летят осы, а казарма летающих не держит. Тапни по клетке у второго поворота.',
+  'tut.sporePick': 'Выбери «Грибницу»: споры замедляют и травят всех вокруг, и летающих тоже.',
+  'tut.wave3': 'Зови волну с осами.',
+  'tut.air': 'Летающих бьют только стрелки и грибница: катапульта и казарма до них не достают.',
+  'tut.wave4': 'Следом идёт толпа термитов. Зови!',
+  'tut.rainArm': 'Время замерло! Жми «Кислотный дождь» внизу слева.',
+  'tut.rainTap': 'Теперь тапни по толпе врагов: кислота бьёт всех в круге, панцирь не спасает.',
+  'tut.spells': 'Пока заклинание перезаряжается, кнопка темнеет и считает секунды. Есть ещё «Дружина» и «Споровая туча».',
+  'tut.wave5': 'Последняя волна: жук-щитоносец в крепком панцире. Зови!',
+  'tut.speed': 'Бой можно ускорить: кнопка x2 вверху справа.',
+  'tut.heroArm': 'Время замерло! Жми «Дружину»: выйдет воевода Жвал с двумя солдатами.',
+  'tut.heroTap': 'Тапни по тропе перед жуком: дружина встанет там и задержит его.',
+  'tut.finish': 'Отлично! Добей волну, и учёба окончена.',
 };
 export type UiKey = keyof typeof UI_RU;
 
@@ -223,6 +273,55 @@ const UI_EN: Record<UiKey, string> = {
   'stats.barracks': '{0} soldiers · health {1} · damage {2}–{3} · respawn {4} s',
   'stats.catapult': 'Damage {0}–{1} in area {2} · range {3} · ground only',
   'stats.spore': 'Slow {0}% · poison {1}/s · range {2} · poison ignores armor',
+  'hud.waveEndless': 'Wave {0}',
+  'hud.best': 'best {0}',
+  'wave.wait': 'The wave will wait',
+  'levels.prologue': 'Prologue',
+  'levels.tutorial': 'Tutorial',
+  'levels.tutorialDone': 'done',
+  'levels.challenge': 'Challenge',
+  'levels.record': 'Best: wave {0}',
+  'levels.noRecord': 'No record yet',
+  'levels.lockedTutorial': 'Finish the tutorial',
+  'intro.tutorial': 'Tutorial',
+  'intro.tutorialStats': '5 short waves · one path · hints right on the field',
+  'intro.skip': 'Skip the tutorial',
+  'intro.endless': 'Challenge',
+  'intro.endlessStats': 'Endless waves · one path spiralling to the anthill · {0} build cells · {1} larvae',
+  'intro.record': 'Best ({0}): {1} waves held, {2} enemies',
+  'intro.noRecord': 'No record on this difficulty yet',
+  'end.tutorialWon': 'Tutorial complete!',
+  'end.tutorialText': 'Now you know everything you need. A real siege lies ahead: Edge of the Old Oak. Victories earn stars, and stars buy colony upgrades. The endless siege is open too: that is where records are set.',
+  'end.march': 'March on!',
+  'end.endless': 'The siege is over',
+  'end.endlessText': 'Waves held: {0}, enemies defeated: {1}. {2}',
+  'end.newRecord': 'New record!',
+  'end.record': 'Best: {0} waves.',
+  'endless.hint': 'Drag the map to look around; pinch or scroll to zoom',
+  'fx.gift': '+{0} nectar for training',
+  'tut.acidCell': 'Enemies walk the path to the anthill. Tap the highlighted cell by the bend: a tower will stand here.',
+  'tut.acidPick': 'Choose Spitters: the ants spit acid and even hit flyers.',
+  'tut.wave1': 'The workers are already building. Call the first wave with “To battle!”: the earlier, the bigger the nectar bonus.',
+  'tut.loot': 'Every enemy drops nectar (top left). An enemy that reaches the anthill eats a larva.',
+  'tut.barracksCell': 'Spiders are tougher than termites. Tap the cell below the path: barracks will stand there.',
+  'tut.barracksPick': 'Choose Barracks: soldiers step onto the path and hold the enemy while towers finish it.',
+  'tut.wave2': 'Call the second wave.',
+  'tut.hold': 'Soldiers hold enemies on the path. Fallen soldiers return from the barracks by themselves.',
+  'tut.upgradeTower': 'Nectar is piling up. Tap the spitters to upgrade the tower.',
+  'tut.upgradePick': 'Press the up arrow: damage and range grow. After level 3 a tower picks a specialization.',
+  'tut.sporeCell': 'Wasps fly in next, and barracks cannot hold flyers. Tap the cell by the second bend.',
+  'tut.sporePick': 'Choose Mycelium: spores slow and poison everyone around, flyers too.',
+  'tut.wave3': 'Call the wave with wasps.',
+  'tut.air': 'Only spitters and mycelium hit flyers: catapults and barracks cannot reach them.',
+  'tut.wave4': 'A crowd of termites is next. Call it!',
+  'tut.rainArm': 'Time has stopped! Press Acid Rain at the bottom left.',
+  'tut.rainTap': 'Now tap the crowd: acid hits everyone in the circle, armor does not help.',
+  'tut.spells': 'While a spell recharges, its button darkens and counts down. There are also Retinue and Spore Cloud.',
+  'tut.wave5': 'The last wave: a shield beetle in thick armor. Call it!',
+  'tut.speed': 'You can speed up the battle: the x2 button at the top right.',
+  'tut.heroArm': 'Time has stopped! Press Retinue: warlord Mandible comes out with two soldiers.',
+  'tut.heroTap': 'Tap the path in front of the beetle: the retinue will stand there and hold it.',
+  'tut.finish': 'Well done! Finish the wave, and training is over.',
 };
 
 /** Строка интерфейса на текущем языке; {0}, {1}… заменяются аргументами. */
@@ -338,6 +437,14 @@ export function perkText(id: string): PerkText {
 
 interface LevelText { name: string; subtitle: string; story: string }
 const LEVELS_EN: Record<string, LevelText> = {
+  tutorial: {
+    name: 'Training Ground', subtitle: 'Tutorial: five short waves',
+    story: 'A short drill for a new warlord: five quick waves, and you know everything you need. Warlord Mandible himself will show towers, waves, nectar and spells, with hints right on the field. Until you are ready, the next wave will wait.',
+  },
+  endless: {
+    name: 'Endless Siege', subtitle: 'A spiral path to the anthill, waves without end',
+    story: 'A new anthill stands right in the middle of a big glade, and a single path leads to it, coiling around it twice. The waves never end, each tougher than the last, and every tenth is led by a boss. Towers between the coils hit two of them at once. The map is bigger than the screen: drag it with a finger or the mouse, pinch or scroll to zoom. How many waves can you hold?',
+  },
   'oak-edge': {
     name: 'Edge of the Old Oak', subtitle: 'First siege: one path, 12 waves',
     story: 'The old oak fell in a storm and the forest floor shuddered. Termites crawled out of the rotten stump, wasps rose from the fallen nest, and beetles came out from under the roots. The queen is laying a new brood, and the colony must hold out until the end of the season. You are the warlord of the anthill: place spitters, raise barracks and let no enemy reach the larvae.',
@@ -364,7 +471,7 @@ const LEVELS_EN: Record<string, LevelText> = {
   },
 };
 export function levelText(id: string): LevelText {
-  const lv = LEVELS.find((l) => l.id === id)!;
+  const lv = [TUTORIAL, ...LEVELS, ENDLESS].find((l) => l.id === id)!;
   if (current === 'en' && LEVELS_EN[id]) return LEVELS_EN[id];
   return { name: lv.name, subtitle: lv.subtitle, story: lv.story };
 }

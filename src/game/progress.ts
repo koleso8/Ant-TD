@@ -11,9 +11,15 @@ export interface Settings {
   fullscreen: boolean | null;
 }
 
+/** Рекорд бесконечной осады: сколько волн отбито и сколько врагов повержено за тот забег. */
+export interface EndlessRecord {
+  wave: number;
+  kills: number;
+}
+
 /** Сохранение прогресса в localStorage: звёзды по уровням, перки, выбранная сложность, настройки. */
 export interface Progress {
-  version: 4;
+  version: 5;
   stars: Record<string, number>;
   perks: Record<string, number>;
   /** Выбранная сложность: запоминается между уровнями. */
@@ -23,6 +29,10 @@ export interface Progress {
   /** Общий режим цели башен: запоминается между уровнями. */
   targetMode: TargetMode;
   settings: Settings;
+  /** Обучение пройдено или пропущено: открыта «Опушка» и бесконечная осада. */
+  tutorialDone: boolean;
+  /** Рекорды бесконечной осады по сложностям. */
+  endless: Partial<Record<DifficultyId, EndlessRecord>>;
 }
 
 const KEY = 'anthill-td-progress';
@@ -36,7 +46,10 @@ export function defaultSettings(): Settings {
 }
 
 export function defaultProgress(): Progress {
-  return { version: 4, stars: {}, perks: {}, difficulty: 'normal', beaten: {}, targetMode: 'first', settings: defaultSettings() };
+  return {
+    version: 5, stars: {}, perks: {}, difficulty: 'normal', beaten: {}, targetMode: 'first', settings: defaultSettings(),
+    tutorialDone: false, endless: {},
+  };
 }
 
 function volume(v: unknown, fallback: number): number {
@@ -60,9 +73,15 @@ export function loadProgress(): Progress {
     }
     const s: Partial<Settings> = p.settings ?? {};
     const def = defaultSettings();
+    const stars: Record<string, number> = { ...(p.stars ?? {}) };
+    const endless: Partial<Record<DifficultyId, EndlessRecord>> = {};
+    for (const [id, r] of Object.entries(p.endless ?? {})) {
+      const d = validDifficulty(id);
+      if (d && r && Number.isFinite(r.wave) && r.wave > 0) endless[d] = { wave: Math.floor(r.wave), kills: Math.max(0, Math.floor(r.kills) || 0) };
+    }
     return {
-      version: 4,
-      stars: { ...(p.stars ?? {}) },
+      version: 5,
+      stars,
       perks,
       difficulty: validDifficulty(p.difficulty) ?? 'normal',
       beaten,
@@ -73,6 +92,9 @@ export function loadProgress(): Progress {
         sfx: volume(s.sfx, def.sfx),
         fullscreen: typeof s.fullscreen === 'boolean' ? s.fullscreen : null,
       },
+      // Сохранения до обучения: кто уже брал звёзды, тот его не проходил, но и учить его нечему.
+      tutorialDone: typeof p.tutorialDone === 'boolean' ? p.tutorialDone : Object.values(stars).some((n) => n > 0),
+      endless,
     };
   } catch {
     return defaultProgress();

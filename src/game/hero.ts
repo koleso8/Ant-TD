@@ -34,7 +34,11 @@ export class Hero implements Blocker {
   staggerTimer = 0;
   readonly level: number;
 
-  constructor(level = 1) {
+  /** Размер карты: «Напор» босса не выбрасывает героя за её край. */
+  private readonly bounds: { w: number; h: number };
+
+  constructor(level = 1, bounds: { w: number; h: number } = { w: LOGICAL_W, h: LOGICAL_H }) {
+    this.bounds = bounds;
     this.level = Math.max(1, Math.min(level, HERO.levels.length));
     this.maxHp = this.hp = this.stats.hp;
   }
@@ -215,8 +219,8 @@ export class Hero implements Blocker {
     const dx = this.x - fromX;
     const dy = this.y - fromY;
     const L = Math.hypot(dx, dy) || 1;
-    this.x = clamp(this.x + (dx / L) * 30, 30, LOGICAL_W - 30);
-    this.y = clamp(this.y + (dy / L) * 30, 90, LOGICAL_H - 30);
+    this.x = clamp(this.x + (dx / L) * 30, 30, this.bounds.w - 30);
+    this.y = clamp(this.y + (dy / L) * 30, 90, this.bounds.h - 30);
   }
 
   draw(ctx: CanvasRenderingContext2D): void {

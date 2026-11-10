@@ -37,6 +37,8 @@ export class Enemy {
   hitFlash = 0;
   /** Остаток проявления, с: только для отрисовки, на симуляцию не влияет. */
   fadeIn = 0;
+  /** Номер волны (с 1), из которой враг; 0 у врагов, выпущенных вне волн. */
+  wave = 0;
   spawnTimer: number;
   /** Босс: сколько секунд его держат; дойдя до `boss.hold`, он делает «Напор». */
   heldTime = 0;
@@ -107,7 +109,7 @@ export class Enemy {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0) {
         this.spawnTimer = sp.every;
-        for (let i = 0; i < sp.count; i++) g.spawnEnemyAt(sp.kind, this.hpMul, this.path, this.progress - 30 - i * 22);
+        for (let i = 0; i < sp.count; i++) g.spawnEnemyAt(sp.kind, this.hpMul, this.path, this.progress - 30 - i * 22).wave = this.wave;
         g.effects.burst(this.x, this.y, 10, PAL.termiteLight, 90, 3.5, 0.5, 120);
       }
     }

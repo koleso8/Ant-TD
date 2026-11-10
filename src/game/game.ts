@@ -1,10 +1,14 @@
 import { MAX_EXTRA_X, type Screen, type ViewRect } from '../engine/canvas';
+import { Camera } from './camera';
+import { Tutorial } from './tutorial';
+import { Effects } from './effects';
+import { ENDLESS } from './endless';
 import type { Input } from '../engine/input';
 import { Rng } from '../engine/rng';
 import { dist, roundRect, type Vec } from '../engine/math';
 import { CELL, DIFFICULTIES, ENEMIES, LOGICAL_H, LOGICAL_W, SPELLS, TARGET_MODES, TOWERS, type DifficultyDef, type DifficultyId, type EnemyKind, type TargetModeDef, type TowerKind } from './config';
-import { LEVELS, type LevelDef } from './levels';
-import { defaultProgress, difficultyRank, freeStars, loadProgress, saveProgress, type Progress } from './progress';
+import { LEVELS, TUTORIAL, levelSize, type LevelDef } from './levels';
+import { defaultProgress, difficultyRank, freeStars, loadProgress, saveProgress, totalStars, type EndlessRecord, type Progress } from './progress';
 import { PERKS, perksFromRanks, type Perks } from './perks';
 import { World } from './world';
 import type { Plot } from './types';
@@ -25,6 +29,13 @@ import { enterFullscreen, exitFullscreen, isInstalledApp, isTouchDevice } from '
 import splashUrl from '../assets/sprites/splash.webp';
 
 export type GameState = 'title' | 'levels' | 'perks' | 'intro' | 'settings' | 'playing' | 'won' | 'lost';
+/** Кампания из шести уровней, обучение на плацу или бесконечная осада на большой карте. */
+export type GameMode = 'campaign' | 'tutorial' | 'endless';
+
+/** Поля вокруг большой карты, до которых можно отвести камеру. */
+const MAP_MARGIN = 320;
+/** Предел пикселей фона большой карты: печётся целиком один раз, и телефону должно хватить памяти. */
+const BG_BUDGET = 8_000_000;
 export type Selection =
   | { type: 'plot'; plot: Plot }
   | { type: 'tower'; tower: Tower }
@@ -69,6 +80,20 @@ export class Game {
   settingsFrom: GameState = 'title';
   /** Подсказка, как поставить игру на главный экран (iPhone и iPad). */
   installHelp = false;
+  /** Камера: на обычных уровнях стоит, на большой карте двигается. */
+  readonly camera = new Camera();
+  /** Шаги обучения на учебном плацу; на других уровнях null. */
+  tutorial: Tutorial | null = null;
+  /** Всплывающие надписи интерфейса: в координатах экрана, камера их не двигает. */
+  readonly uiFx = new Effects();
+  /** Забег бесконечной осады побил рекорд на этой сложности. */
+  newRecord = false;
+  /** Сколько ещё секунд показывать подсказку про камеру в начале бесконечной осады. */
+  camHint = 0;
+  /** Точки, где тропы входят на карту, и направление внутрь: там стоят флажки волн. */
+  private entrances: { x: number; y: number; angle: number }[] = [];
+  /** Тропы следующей волны: волна бесконечной осады собирается на лету, так что запоминаем. */
+  private nextPaths: { n: number; paths: number[] } | null = null;
 
   private bg: { canvas: HTMLCanvasElement; k: number; view: ViewRect } | null = null;
   /** Заставка главного меню, печётся один раз; перепекается, когда догрузится картина. */
@@ -92,6 +117,8 @@ export class Game {
     input.onTap = (p) => this.onTap(p);
     input.onSecondaryTap = () => this.onSecondaryTap();
     input.onKey = (k) => this.onKey(k);
+    input.onDrag = (dx, dy) => this.onDrag(dx, dy);
+    input.onZoom = (f, at) => this.onZoom(f, at);
     this.loadLevel(0);
   }
 
@@ -109,6 +136,17 @@ export class Game {
   get time(): number { return this.world.time; }
   get perks(): Perks { return perksFromRanks(this.progress.perks); }
   get difficulty(): DifficultyDef { return DIFFICULTIES.find((d) => d.id === this.progress.difficulty) ?? DIFFICULTIES[1]; }
+  get mode(): GameMode {
+    return this.level === TUTORIAL ? 'tutorial' : this.level === ENDLESS ? 'endless' : 'campaign';
+  }
+  /** Бесконечная осада открыта после обучения (и у всех, кто уже брал звёзды). */
+  get endlessUnlocked(): boolean {
+    return import.meta.env.DEV || this.progress.tutorialDone || totalStars(this.progress) > 0;
+  }
+  /** Рекорд бесконечной осады на выбранной сложности. */
+  get endlessBest(): EndlessRecord | null {
+    return this.progress.endless[this.difficulty.id] ?? null;
+  }
 
   /** Сложность выбирается на экране перед уровнем и запоминается между уровнями. */
   setDifficulty(id: DifficultyId): void {
@@ -129,11 +167,12 @@ export class Game {
 
   // ───────────── уровни и прогресс ─────────────
 
+  /** Первый уровень кампании открывает обучение, следующие — победа на предыдущем; кто уже побеждал здесь, тому открыто. */
   isUnlocked(i: number): boolean {
-    if (i === 0) return true;
     if (import.meta.env.DEV) return true;
-    const prev = LEVELS[i - 1];
-    return (this.progress.stars[prev.id] ?? 0) > 0;
+    const stars = (lv: LevelDef): number => this.progress.stars[lv.id] ?? 0;
+    if (stars(LEVELS[i]) > 0) return true;
+    return i === 0 ? this.progress.tutorialDone : stars(LEVELS[i - 1]) > 0;
   }
 
   starsFor(i: number): number {
@@ -141,9 +180,26 @@ export class Game {
   }
 
   loadLevel(i: number): void {
-    this.levelIndex = i;
-    this.world = this.makeWorld(LEVELS[i]);
+    this.loadDef(LEVELS[i], i);
+  }
+
+  /** Загрузить уровень; index — номер в кампании, у обучения и бесконечной осады -1. */
+  private loadDef(def: LevelDef, index: number): void {
+    this.levelIndex = index;
+    this.world = this.makeWorld(def);
     this.bg = null;
+    this.nextPaths = null;
+    this.entrances = this.world.paths.map((p) => {
+      const { w, h } = levelSize(def);
+      let d = 0;
+      while (d < p.length) {
+        const q = p.at(d);
+        if (q.x >= 0 && q.x <= w && q.y >= 0 && q.y <= h) break;
+        d += 6;
+      }
+      const q = p.at(Math.min(p.length, d + 30));
+      return { x: q.x, y: q.y, angle: q.angle };
+    });
     const a = this.level.anthill;
     this.ambient = [
       { cx: a.x - 30, cy: a.y + 42, rx: 60, ry: 16, speed: 0.9, phase: 0 },
@@ -172,6 +228,25 @@ export class Game {
     this.pendingSpec = null;
     this.armedSpell = null;
     this.hurtFlash = 0;
+    this.newRecord = false;
+    this.uiFx.clear();
+    this.tutorial = this.mode === 'tutorial' ? new Tutorial() : null;
+    this.camHint = this.mode === 'endless' ? 12 : 0;
+    this.resetCamera();
+  }
+
+  /** Обычный уровень ровно в кадре; большую карту сначала показываем целиком, насколько влезает. */
+  private resetCamera(): void {
+    const lv = this.level;
+    if (!lv.size) {
+      this.camera.fixed();
+      return;
+    }
+    const { w, h } = lv.size;
+    const v = this.screen.view;
+    this.camera.open({ x0: -MAP_MARGIN, y0: -MAP_MARGIN, x1: w + MAP_MARGIN, y1: h + MAP_MARGIN }, { x: w / 2, y: h / 2 }, 1);
+    this.camera.zoom = this.camera.fitZoom(v, w, h);
+    this.camera.clamp(v);
   }
 
   /** Начать текущий уровень заново. */
@@ -186,7 +261,33 @@ export class Game {
     this.state = 'intro';
   }
 
+  chooseTutorial(): void {
+    this.loadDef(TUTORIAL, -1);
+    this.state = 'intro';
+  }
+
+  chooseEndless(): void {
+    if (!this.endlessUnlocked) return;
+    this.loadDef(ENDLESS, -1);
+    this.state = 'intro';
+  }
+
+  /** «Пропустить обучение»: считаем пройденным, открывается кампания и бесконечная осада. */
+  skipTutorial(): void {
+    this.progress.tutorialDone = true;
+    saveProgress(this.progress);
+    this.toLevels();
+  }
+
+  /** «Играть» на заставке: новичок сразу попадает на обучение, остальные к списку уровней. */
+  playFromTitle(): void {
+    if (!this.progress.tutorialDone && totalStars(this.progress) === 0) this.chooseTutorial();
+    else this.toLevels();
+  }
+
   toLevels(): void {
+    // Ушли из забега бесконечной осады: дошедшее до сих пор тоже идёт в рекорд.
+    if (this.state === 'playing') this.commitEndless();
     this.state = 'levels';
     this.paused = false;
     this.resetArmed = false;
@@ -287,10 +388,30 @@ export class Game {
     saveProgress(this.progress);
   }
 
+  /** Рекорд бесконечной осады: отбитые волны, при равенстве — повергнутые враги. Можно звать сколько угодно раз за забег. */
+  private commitEndless(): void {
+    if (this.mode !== 'endless') return;
+    const wave = this.world.clearedWaves;
+    const kills = this.world.stats.kills;
+    if (wave <= 0) return;
+    const best = this.endlessBest;
+    if (best && (wave < best.wave || (wave === best.wave && kills <= best.kills))) return;
+    this.progress.endless[this.difficulty.id] = { wave, kills };
+    saveProgress(this.progress);
+    this.newRecord = true;
+  }
+
   private onWin(): void {
     this.state = 'won';
     audio.play('win');
     this.selected = null;
+    if (this.mode === 'tutorial') {
+      // Обучение звёзд не даёт: оно открывает кампанию и бесконечную осаду.
+      this.earnedStars = 0;
+      this.progress.tutorialDone = true;
+      saveProgress(this.progress);
+      return;
+    }
     const frac = this.lives / Math.max(1, this.world.startLives);
     this.earnedStars = frac >= 0.9 ? 3 : frac >= 0.5 ? 2 : 1;
     const id = this.level.id;
@@ -331,7 +452,7 @@ export class Game {
     this.progress.targetMode = next.id;
     saveProgress(this.progress);
     const o = this.ui.hud();
-    this.effects.text(t('fx.target', targetText(next.id).name.toLowerCase()), 975 + o.r, 618 + o.b, PAL.uiGold, 18);
+    this.uiFx.text(t('fx.target', targetText(next.id).name.toLowerCase()), 975 + o.r, 618 + o.b, PAL.uiGold, 18);
   }
 
   sellTower(t: Tower): void {
@@ -349,7 +470,10 @@ export class Game {
     if (this.state === 'playing') this.paused = !this.paused;
   }
   autoPause(): void {
-    if (this.state === 'playing') this.paused = true;
+    if (this.state !== 'playing') return;
+    this.paused = true;
+    // Вкладку могут и закрыть: рекорд бесконечной осады сохраняем сразу.
+    this.commitEndless();
   }
   /** Кнопка хотбара или клавиша: выбрать заклинание, следующий тап по полю применит его. */
   armSpell(i: number): void {
@@ -360,7 +484,7 @@ export class Game {
     }
     if (!this.world.spells.ready(i)) {
       const o = this.ui.hud();
-      this.effects.text(t('fx.cooldown', Math.ceil(this.world.spells.cooldowns[i])), 164 + o.l, 596 + o.b, PAL.uiRed, 18);
+      this.uiFx.text(t('fx.cooldown', Math.ceil(this.world.spells.cooldowns[i])), 164 + o.l, 596 + o.b, PAL.uiRed, 18);
       return;
     }
     this.armedSpell = i;
@@ -381,17 +505,62 @@ export class Game {
     }
     if (this.ui.tap(p)) { audio.play('click'); return; }
     this.pendingSpec = null;
+    // Тап по полю: из координат экрана в координаты мира (на большой карте их двигает камера).
+    const w = this.camera.toWorld(p.x, p.y);
     if (this.armedSpell !== null) {
       // Цель заклинания: любая точка поля ниже верхней панели.
-      if (p.y > this.ui.hud().t + 84 && this.world.castSpell(this.armedSpell, { x: p.x, y: p.y })) this.armedSpell = null;
+      if (p.y > this.ui.hud().t + 84 && this.world.castSpell(this.armedSpell, w)) this.armedSpell = null;
       return;
     }
-    const plot = this.world.plotAt(p.x, p.y);
+    const plot = this.world.plotAt(w.x, w.y);
     if (plot) {
       this.selected = plot.tower ? { type: 'tower', tower: plot.tower } : { type: 'plot', plot };
       return;
     }
     this.selected = null;
+  }
+
+  /** Перетаскивание двигает большую карту; на обычных уровнях камера стоит. */
+  private onDrag(dx: number, dy: number): void {
+    if (this.state !== 'playing' || !this.camera.free) return;
+    this.camera.pan(dx, dy);
+    this.camera.clamp(this.screen.view);
+    this.camHint = 0;
+  }
+
+  /** Щипок или колесо: масштаб вокруг пальца или курсора. */
+  private onZoom(f: number, at: Vec): void {
+    if (this.state !== 'playing' || !this.camera.free) return;
+    this.camera.zoomAt(f, at.x, at.y, this.screen.view);
+    this.camera.clamp(this.screen.view);
+    this.camHint = 0;
+  }
+
+  /** Показать вход тропы: тап по стрелке у края экрана. */
+  focusEntrance(i: number): void {
+    const e = this.entrances[i];
+    if (!e || !this.camera.free) return;
+    const c = this.camera.toScreen(e.x, e.y);
+    this.camera.pan(640 - c.x, 360 - c.y);
+    this.camera.clamp(this.screen.view);
+  }
+
+  /** Где тропа i входит на карту. */
+  entrance(i: number): { x: number; y: number; angle: number } | null {
+    return this.entrances[i] ?? null;
+  }
+
+  /** Тропы, по которым враги идут сейчас или пойдут в следующей волне. */
+  incomingPaths(): number[] {
+    const w = this.world.waves;
+    const set = new Set<number>();
+    for (const s of w.queue) set.add(s.path);
+    if (w.countdown !== null && w.index < w.total) {
+      const n = w.index + 1;
+      if (!this.nextPaths || this.nextPaths.n !== n) this.nextPaths = { n, paths: w.wave(n).groups.map((gr) => gr.path ?? 0) };
+      for (const p of this.nextPaths.paths) set.add(p);
+    }
+    return [...set];
   }
 
   /** Правая кнопка мыши: отменить выбранное заклинание и закрыть меню. */
@@ -409,12 +578,21 @@ export class Game {
     }
     if (k === ' ') {
       switch (this.state) {
-        case 'title': this.toLevels(); break;
+        case 'title': this.playFromTitle(); break;
         case 'intro': case 'won': case 'lost': this.start(); break;
         case 'playing': this.togglePause(); break;
         default: break;
       }
       return;
+    }
+    if (this.state === 'playing' && this.camera.free) {
+      // Стрелки двигают большую карту, плюс и минус меняют масштаб.
+      const step = 140;
+      const pan: Record<string, readonly [number, number]> = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+      const d = pan[k];
+      if (d) { this.onDrag(d[0], d[1]); return; }
+      if (k === '+' || k === '=') { this.onZoom(1.2, { x: 640, y: 360 }); return; }
+      if (k === '-' || k === '_') { this.onZoom(1 / 1.2, { x: 640, y: 360 }); return; }
     }
     if (k === 'Escape') {
       if (this.state === 'settings') this.closeSettings();
@@ -441,6 +619,7 @@ export class Game {
         w.waves.skipAll();
         for (const e of w.enemies) e.damage(1e9, 'true', w);
       }
+      if (k === 'l' || k === 'L') w.loseLives(w.lives);
       if (k === 'y' || k === 'Y') {
         const kinds = Object.keys(ENEMIES) as EnemyKind[];
         w.spawnEnemy(kinds[this.devSpawnIdx++ % kinds.length], 1, 0);
@@ -458,9 +637,19 @@ export class Game {
     this.clock += dt;
     audio.setMusic(this.state === 'playing' || (this.state === 'settings' && this.settingsFrom === 'playing') ? 'battle' : 'menu');
     if (this.hurtFlash > 0) this.hurtFlash -= dt;
+    this.uiFx.update(dt);
     if (this.state !== 'playing' || this.paused) {
       this.effects.update(dt);
       return;
+    }
+    if (this.camHint > 0) this.camHint -= dt;
+    if (this.tutorial) {
+      this.tutorial.update(dt, this);
+      // Обучение остановило время: мир стоит, а кнопки и тапы работают.
+      if (this.tutorial.frozen) {
+        this.effects.update(dt);
+        return;
+      }
     }
     for (let i = 0; i < this.speed && this.world.state === 'playing'; i++) this.world.step(dt);
     if (this.world.state === 'won') this.onWin();
@@ -468,6 +657,7 @@ export class Game {
       this.state = 'lost';
       audio.play('lose');
       this.selected = null;
+      this.commitEndless();
     }
   }
 
@@ -484,8 +674,15 @@ export class Game {
       if (this.screen.cssH > this.screen.cssW) this.drawPortraitHint(ctx);
       return;
     }
+    // Мир рисуется через камеру (на обычных уровнях она стоит), интерфейс поверх в координатах экрана.
+    const cam = this.camera;
+    cam.clamp(this.screen.view);
+    const wv = cam.free ? cam.visible(this.screen.view) : this.screen.view;
+    ctx.save();
+    cam.apply(ctx);
     this.drawBackground(ctx);
-    this.drawIncoming(ctx);
+    this.drawIncoming(ctx, wv);
+    if (this.mode === 'endless') this.drawEntranceFlags(ctx);
 
     if (this.state === 'playing') this.drawGrid(ctx);
 
@@ -508,19 +705,23 @@ export class Game {
       const def = SPELLS[this.armedSpell];
       const hv = this.input.hover;
       if (hv && hv.y > this.ui.hud().t + 84) {
-        drawRange(ctx, hv.x, hv.y, def.radius, def.id === 'acid' ? '155,229,58' : def.id === 'spores' ? '181,123,214' : '255,217,90');
+        const p = cam.toWorld(hv.x, hv.y);
+        drawRange(ctx, p.x, p.y, def.radius, def.id === 'acid' ? '155,229,58' : def.id === 'spores' ? '181,123,214' : '255,217,90');
       }
     }
 
     for (const c of this.world.clouds) drawSporeCloud(ctx, c.x, c.y, c.r, c.life / c.max, this.clock, c.variant);
 
+    // На большой карте рисуем только то, что видно, с запасом на размер спрайта.
+    const seen = (x: number, y: number): boolean => x > wv.x0 - 120 && x < wv.x1 + 120 && y > wv.y0 - 150 && y < wv.y1 + 120;
     const items: { y: number; draw: () => void }[] = [];
     for (const t of this.towers) {
+      if (!seen(t.x, t.y)) continue;
       items.push({ y: t.y + 6, draw: () => t.draw(ctx, this.time) });
       if (t.built) for (const s of t.soldiers) if (!s.dead) items.push({ y: s.y, draw: () => s.draw(ctx) });
     }
     for (const c of this.world.constructions) {
-      c.builders.forEach((b, i) => items.push({ y: b.y, draw: () => this.drawBuilder(ctx, c, b, i) }));
+      c.builders.forEach((b, i) => { if (seen(b.x, b.y)) items.push({ y: b.y, draw: () => this.drawBuilder(ctx, c, b, i) }); });
       if (c.phase === 'work') {
         const t = c.tower;
         items.push({ y: t.y + 24, draw: () => drawLadder(ctx, t.x + 30, t.y + 22, t.x + 14, t.y - 38) });
@@ -531,30 +732,60 @@ export class Game {
     }
     for (const s of this.world.spells.recruits) if (!s.dead) items.push({ y: s.y, draw: () => s.draw(ctx) });
     if (!h.dead) items.push({ y: h.y, draw: () => h.draw(ctx) });
-    for (const e of this.enemies) if (!e.def.flying) items.push({ y: e.y, draw: () => e.draw(ctx, this.clock) });
+    for (const e of this.enemies) if (!e.def.flying && seen(e.x, e.y)) items.push({ y: e.y, draw: () => e.draw(ctx, this.clock) });
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
 
     for (const p of this.world.projectiles) p.draw(ctx);
-    for (const e of this.enemies) if (e.def.flying) e.draw(ctx, this.clock);
+    for (const e of this.enemies) if (e.def.flying && seen(e.x, e.y)) e.draw(ctx, this.clock);
     this.drawAmbient(ctx);
     this.effects.draw(ctx);
-    if (this.level.theme.night) this.drawNight(ctx);
+    if (this.level.theme.night) this.drawFireflies(ctx);
+    ctx.restore();
 
+    if (this.level.theme.night) {
+      ctx.fillStyle = 'rgba(15,25,70,0.14)';
+      this.fillView(ctx);
+    }
+    if (this.tutorial?.frozen && this.state === 'playing') {
+      // Обучение остановило время: поле чуть синеет, чтобы это было видно.
+      ctx.fillStyle = 'rgba(40,80,170,0.24)';
+      this.fillView(ctx);
+    }
     if (this.hurtFlash > 0) {
       ctx.fillStyle = `rgba(200,30,20,${Math.min(0.45, this.hurtFlash * 0.6)})`;
       this.fillView(ctx);
     }
 
     this.ui.draw(ctx);
+    this.uiFx.draw(ctx);
     this.screen.end();
     if (this.screen.cssH > this.screen.cssW) this.drawPortraitHint(ctx);
+  }
+
+  /** Флажок у входа тропы на большой карте: оттуда выйдет следующая волна. */
+  private drawEntranceFlags(ctx: CanvasRenderingContext2D): void {
+    for (const i of this.incomingPaths()) {
+      const e = this.entrances[i];
+      if (!e) continue;
+      // Флажок сбоку от тропы, чтобы не загораживал идущих врагов.
+      const nx = -Math.sin(e.angle);
+      const ny = Math.cos(e.angle);
+      const side = ny > 0.5 ? -1 : 1;
+      const x = e.x + nx * 54 * side;
+      const y = e.y + ny * 54 * side;
+      const wave = Math.sin(this.clock * 6 + i);
+      drawShadow(ctx, x, y + 4, 12, 5);
+      twig(ctx, x, y + 4, x, y - 66, 6);
+      pennant(ctx, x, y - 66, 46, 28, PAL.uiRed, wave * 4);
+    }
   }
 
   /** Подсветка клеток: свободные клетки и так видны по шахматному газону; здесь только курсор (ПК) и выбранная клетка. */
   private drawGrid(ctx: CanvasRenderingContext2D): void {
     const sel = this.selected;
-    const hover = this.input.hover;
+    const hv = this.input.hover;
+    const hover = hv ? this.camera.toWorld(hv.x, hv.y) : null;
     const hovered = hover ? this.world.plotAt(hover.x, hover.y) : null;
     const half = CELL / 2 - 3;
     if (hovered && !hovered.tower && !(sel?.type === 'plot' && sel.plot === hovered)) {
@@ -708,8 +939,13 @@ export class Game {
   }
 
   private drawBackground(ctx: CanvasRenderingContext2D): void {
-    const k = Math.min(this.screen.pixelScale, 2.5);
-    const v = this.screen.view;
+    // Обычный уровень печётся под видимую область экрана, большая карта целиком вместе с полями.
+    const free = this.camera.free;
+    const v = free ? this.camera.area : this.screen.view;
+    const area = (v.x1 - v.x0) * (v.y1 - v.y0);
+    const k = free
+      ? Math.min(this.screen.pixelScale * this.camera.maxZoom, Math.sqrt(BG_BUDGET / area))
+      : Math.min(this.screen.pixelScale, 2.5);
     if (!this.bg || Math.abs(this.bg.k - k) > 0.12 || !sameView(this.bg.view, v)) this.bake(k, v);
     const b = this.bg;
     if (b) ctx.drawImage(b.canvas, b.view.x0, b.view.y0, b.view.x1 - b.view.x0, b.view.y1 - b.view.y0);
@@ -727,9 +963,10 @@ export class Game {
     bctx.scale(k, k);
     bctx.translate(-v.x0, -v.y0);
     const o = this.ui.hud();
+    const size = levelSize(this.level);
     drawTerrain(bctx, {
-      w: LOGICAL_W,
-      h: LOGICAL_H,
+      w: size.w,
+      h: size.h,
       paths: this.world.paths,
       plots: this.plots,
       anthill: this.level.anthill,
@@ -737,8 +974,8 @@ export class Game {
       marginRng: new Rng(this.level.seed + 7),
       view: v,
       theme: this.level.theme,
-      // Под интерфейсом декор не нужен; угловые блоки прижаты к краям экрана.
-      reserved: [
+      // Под интерфейсом декор не нужен; угловые блоки прижаты к краям экрана. Над большой картой интерфейс плавает.
+      reserved: this.camera.free ? [] : [
         { x: v.x0, y: v.y0, w: vw, h: o.t + 84 - v.y0 },
         { x: 930 + o.r, y: 615 + o.b, w: v.x1 - 930 - o.r, h: v.y1 - 615 - o.b },
         { x: v.x0, y: 610 + o.b, w: 365 + o.l - v.x0, h: v.y1 - 610 - o.b },
@@ -757,12 +994,12 @@ export class Game {
    * Враги волны, которые ещё не вышли на карту: на полях широкого экрана они уже идут по
    * продолжению тропы и выходят на карту ровно там и тогда, где их создаст симуляция.
    */
-  private drawIncoming(ctx: CanvasRenderingContext2D): void {
-    const v = this.screen.view;
+  private drawIncoming(ctx: CanvasRenderingContext2D, v: ViewRect): void {
     const paths = this.world.paths;
+    const { w, h } = levelSize(this.level);
     for (const s of this.world.waves.queue) {
       const path = paths[s.path] ?? paths[0];
-      const lead = pathLead(path, LOGICAL_W, LOGICAL_H);
+      const lead = pathLead(path, w, h);
       if (!lead) continue;
       const room = leadRoom(lead, v);
       if (room <= 0) continue;
@@ -785,10 +1022,8 @@ export class Game {
     }
   }
 
-  /** Ночь: лёгкая синяя дымка поверх сцены и светлячки. */
-  private drawNight(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = 'rgba(15,25,70,0.14)';
-    this.fillView(ctx);
+  /** Светлячки ночных уровней; синюю дымку поверх сцены рисует render. */
+  private drawFireflies(ctx: CanvasRenderingContext2D): void {
     for (const f of this.fireflies) {
       const t = this.clock * f.speed + f.phase;
       const px = f.x + Math.sin(t) * f.r;

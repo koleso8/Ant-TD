@@ -42,6 +42,21 @@ export interface LevelDef {
   lives: number;
   waves: readonly WaveDef[];
   theme: LevelTheme;
+  /** Размер карты; без него карта ровно кадр 1280x720. Карта больше кадра двигается камерой. */
+  size?: { w: number; h: number };
+  /** Пауза между волнами, с; без неё WAVE_DELAY. */
+  waveDelay?: number;
+  /** Бесконечные волны: n-я волна (с 1) собирается на лету вместо списка waves. */
+  waveGen?: (n: number) => WaveDef;
+  /** Рост здоровья врагов от номера волны (с 1); без него общий линейный рост. */
+  hpMul?: (n: number) => number;
+  /** Надбавка к нектару за врагов: на большой карте обороны две, и доход должен их кормить. */
+  bountyMul?: number;
+}
+
+/** Размер карты уровня в логических пикселях. */
+export function levelSize(lv: LevelDef): { w: number; h: number } {
+  return lv.size ?? { w: 1280, h: 720 };
 }
 
 const MEADOW: LevelTheme = {
@@ -358,6 +373,46 @@ export const LEVEL6: LevelDef = {
 };
 
 export const LEVELS: readonly LevelDef[] = [LEVEL1, LEVEL2, LEVEL3, LEVEL4, LEVEL5, LEVEL6];
+
+/** Пять коротких волн обучения: каждая показывает одну новую вещь. */
+const TUTORIAL_WAVES: readonly WaveDef[] = [
+  { groups: [{ kind: 'termite', count: 4, interval: 1.8, delay: 0 }] },
+  { groups: [{ kind: 'termite', count: 5, interval: 1.2, delay: 0 }, { kind: 'spider', count: 2, interval: 1.6, delay: 4 }] },
+  { groups: [{ kind: 'wasp', count: 3, interval: 1.4, delay: 0 }, { kind: 'termite', count: 4, interval: 1.1, delay: 2 }] },
+  { groups: [{ kind: 'termite', count: 12, interval: 0.4, delay: 0 }, { kind: 'blackAnt', count: 3, interval: 0.7, delay: 3 }] },
+  { groups: [{ kind: 'beetle', count: 1, interval: 1, delay: 0 }, { kind: 'termite', count: 5, interval: 0.8, delay: 4 }, { kind: 'spider', count: 2, interval: 1.2, delay: 7 }] },
+];
+
+/**
+ * Учебный плац: короткая тропа с тремя поворотами. Клетки для подсказок (см. tutorial.ts):
+ * стрелки в углу первого поворота (360,360), казарма под тропой (600,600), грибница в углу (760,440).
+ */
+export const TUTORIAL: LevelDef = {
+  id: 'tutorial',
+  name: 'Учебный плац',
+  subtitle: 'Обучение: пять коротких волн',
+  story:
+    'Короткая учёба для нового воеводы: пять быстрых волн, и ты знаешь всё нужное. Башни, волны, ' +
+    'нектар и заклинания покажет сам воевода Жвал, подсказки будут прямо на поле. Пока ты не готов, ' +
+    'следующая волна подождёт.',
+  paths: [[
+    { x: -70, y: 280 },
+    { x: 440, y: 280 },
+    { x: 440, y: 520 },
+    { x: 840, y: 520 },
+    { x: 840, y: 360 },
+    { x: 1080, y: 360 },
+  ]],
+  anthill: { x: 1080, y: 352 },
+  seed: 1101,
+  startGold: 120,
+  lives: 20,
+  waves: TUTORIAL_WAVES,
+  theme: MEADOW,
+  waveDelay: 10,
+  // Учебные враги слабее обычных: одна башня на первой волне должна справиться без потерь.
+  hpMul: (n) => 0.6 + 0.05 * (n - 1),
+};
 
 export interface ActDef {
   title: string;

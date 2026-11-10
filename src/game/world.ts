@@ -1,6 +1,6 @@
 import { dist, type Vec } from '../engine/math';
-import { CELL, DIFFICULTIES, HERO, LOGICAL_H, LOGICAL_W, TOWERS, type DifficultyDef, type EnemyKind, type TargetMode, type TowerKind } from './config';
-import type { LevelDef } from './levels';
+import { CELL, DIFFICULTIES, HERO, TOWERS, type DifficultyDef, type EnemyKind, type TargetMode, type TowerKind } from './config';
+import { levelSize, type LevelDef } from './levels';
 import { Path, snapWaypoints } from './path';
 import type { GameCtx, Plot, SoundId, SporeCloud } from './types';
 import { Enemy } from './enemy';
@@ -22,6 +22,8 @@ export interface WorldStats {
   /** Сколько личинок потеряно на каждой волне (индекс = номер волны с 1). */
   leaksByWave: number[];
   goldEarned: number;
+  /** Сколько врагов убито (сбежавшие к муравейнику не в счёт). */
+  kills: number;
   /** Урон по источникам: acid, barracks, catapult, spore, hero. */
   damage: Record<string, number>;
   heroDeaths: number;
@@ -50,7 +52,16 @@ export class World implements GameCtx {
   lives: number;
   time = 0;
   state: WorldState = 'playing';
-  readonly stats: WorldStats = { leaksByWave: [], goldEarned: 0, damage: {}, heroDeaths: 0 };
+  readonly stats: WorldStats = { leaksByWave: [], goldEarned: 0, kills: 0, damage: {}, heroDeaths: 0 };
+  /** Размер карты: кадр 1280x720 или больше (бесконечная осада). */
+  readonly width: number;
+  readonly height: number;
+  /**
+   * Самая поздняя отбитая волна: из неё никого не осталось ни на поле, ни в очереди (убиты или дошли до
+   * муравейника), а колония стоит. Рекорд бесконечной осады считается по нему, а не по номеру вызванной
+   * волны: позвать волну мало, её надо пережить. Медленный босс прошлой волны счёт не держит.
+   */
+  clearedWaves = 0;
   /** Game подсвечивает экран красным, когда враг дошёл до личинок. */
   onLivesLost: ((n: number) => void) | null = null;
   /** Game озвучивает события ядра; симуляция оставляет null. */
@@ -62,13 +73,16 @@ export class World implements GameCtx {
     readonly difficulty: DifficultyDef = DIFFICULTIES[1], effects: Effects = new Effects(),
   ) {
     this.effects = effects;
+    const size = levelSize(level);
+    this.width = size.w;
+    this.height = size.h;
     this.paths = level.paths.map((w) => new Path(snapWaypoints(w, CELL)));
     this.plots = World.makeGrid(level, this.paths);
     this.gold = Math.round(level.startGold * difficulty.goldMul) + perks.startGold;
     this.lives = this.startLives;
-    this.hero = new Hero(Math.min(HERO.levels.length, HERO.baseLevel + perks.heroLevelBonus));
+    this.hero = new Hero(Math.min(HERO.levels.length, HERO.baseLevel + perks.heroLevelBonus), size);
     this.spells = new SpellBook(perks);
-    this.waves = new WaveManager(level.waves);
+    this.waves = new WaveManager(level.waveGen ?? level.waves, { delay: level.waveDelay, hpMul: level.hpMul });
   }
 
   /** Сколько личинок было в начале: порог звёзд считается от этого числа. */
@@ -76,24 +90,27 @@ export class World implements GameCtx {
     return Math.round(this.level.lives * this.difficulty.livesMul) + this.perks.extraLives;
   }
   get bountyMul(): number {
-    return this.difficulty.goldMul;
+    return this.difficulty.goldMul * (this.level.bountyMul ?? 1);
   }
 
   /**
    * Сетка застройки: все клетки поля, не занятые тропами, водой, стеной, пнём,
-   * муравейником и панелями интерфейса.
+   * муравейником и панелями интерфейса. На большой карте интерфейс плавает над ней,
+   * и клетки под ним достаются, сдвинув камеру.
    */
   static makeGrid(level: LevelDef, paths: readonly Path[]): Plot[] {
     const t = level.theme;
-    const cols = Math.floor(LOGICAL_W / CELL);
-    const rows = Math.floor(LOGICAL_H / CELL);
+    const size = levelSize(level);
+    const fixed = !level.size;
+    const cols = Math.floor(size.w / CELL);
+    const rows = Math.floor(size.h / CELL);
     const out: Plot[] = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const cx = c * CELL + CELL / 2;
         const cy = r * CELL + CELL / 2;
-        if (cy < 100) continue;
-        if (cy > 640 && (cx < 380 || cx > 1000)) continue;
+        if (fixed && cy < 100) continue;
+        if (fixed && cy > 640 && (cx < 380 || cx > 1000)) continue;
         // Холм муравейника: эллипс чуть больше рисунка.
         const ax = (cx - level.anthill.x) / 108;
         const ay = (cy - level.anthill.y) / 94;
@@ -164,7 +181,22 @@ export class World implements GameCtx {
     this.enemies = this.enemies.filter((e) => !e.dead);
     this.projectiles = this.projectiles.filter((p) => !p.dead);
     this.effects.update(dt);
+    this.countCleared();
     if (this.state === 'playing' && this.waves.finished(this)) this.state = 'won';
+  }
+
+  /** Волна отбита, когда из неё никого не осталось ни на поле, ни в очереди на выход. */
+  private countCleared(): void {
+    if (this.state === 'lost' || this.clearedWaves >= this.waves.index) return;
+    const busy = new Set<number>();
+    for (const e of this.enemies) busy.add(e.wave);
+    for (const s of this.waves.queue) busy.add(s.wave);
+    for (let n = this.waves.index; n > this.clearedWaves; n--) {
+      if (!busy.has(n)) {
+        this.clearedWaves = n;
+        break;
+      }
+    }
   }
 
   // ───────────── GameCtx ─────────────
@@ -194,12 +226,15 @@ export class World implements GameCtx {
     return e;
   }
 
-  spawnEnemyAt(kind: EnemyKind, hpMul: number, path: Path, progress: number): void {
-    this.enemies.push(new Enemy(kind, hpMul, path, progress));
+  spawnEnemyAt(kind: EnemyKind, hpMul: number, path: Path, progress: number): Enemy {
+    const e = new Enemy(kind, hpMul, path, progress);
+    this.enemies.push(e);
+    return e;
   }
 
   /** Перк фуражиров: надбавка к награде за врага. */
   onEnemyKilled(e: Enemy): void {
+    this.stats.kills++;
     if (this.perks.bountyMul > 1) this.addGold(Math.round(e.def.bounty * (this.perks.bountyMul - 1)));
   }
 
