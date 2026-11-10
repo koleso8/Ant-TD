@@ -6,7 +6,7 @@ import { freeStars, totalStars } from './progress';
 import { actTitle, difficultyText, gameTitle, getLang, LANGS, levelText, perkText, spellText, t, targetText, towerText } from './i18n';
 import { Path, snapWaypoints } from './path';
 import type { Game } from './game';
-import { canInstall, fullscreenSupported, isInstalledApp, promptInstall } from '../engine/device';
+import { canInstall, fullscreenSupported, isInstalledApp, manualInstall, promptInstall } from '../engine/device';
 import type { Tower } from './tower';
 import { PAL } from '../render/palette';
 import { drawText, measure, wrapText } from '../render/text';
@@ -61,6 +61,96 @@ function towerStats(tw: Tower): string {
   }
 }
 
+/** Светлая плашка под значки браузера в подсказке установки. */
+function iconPlate(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  roundRect(ctx, x - 24, y - 24, 48, 48, 12);
+  ctx.fillStyle = '#f6f2ea';
+  ctx.fill();
+  ctx.strokeStyle = PAL.outline;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+}
+
+/** Значок «Поделиться» как в Safari: квадрат без верха и стрелка вверх. */
+function drawShareIcon(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  iconPlate(ctx, x, y);
+  ctx.save();
+  ctx.strokeStyle = '#2f7cf6';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x - 5, y - 4);
+  ctx.lineTo(x - 11, y - 4);
+  ctx.lineTo(x - 11, y + 15);
+  ctx.lineTo(x + 11, y + 15);
+  ctx.lineTo(x + 11, y - 4);
+  ctx.lineTo(x + 5, y - 4);
+  ctx.moveTo(x, y + 5);
+  ctx.lineTo(x, y - 16);
+  ctx.moveTo(x - 6, y - 10);
+  ctx.lineTo(x, y - 16);
+  ctx.lineTo(x + 6, y - 10);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Значок «На экран „Домой“»: квадрат с плюсом. */
+function drawAddIcon(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  iconPlate(ctx, x, y);
+  ctx.save();
+  ctx.strokeStyle = '#2b2b2b';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  roundRect(ctx, x - 12, y - 12, 24, 24, 6);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x, y - 6);
+  ctx.lineTo(x, y + 6);
+  ctx.moveTo(x - 6, y);
+  ctx.lineTo(x + 6, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Плитка приложения: муравейник с флажком на закатном небе. */
+function drawAppTile(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.save();
+  roundRect(ctx, x - 24, y - 24, 48, 48, 12);
+  const sky = ctx.createLinearGradient(x, y - 24, x, y + 24);
+  sky.addColorStop(0, '#f7d98a');
+  sky.addColorStop(1, '#e98a4a');
+  ctx.fillStyle = sky;
+  ctx.fill();
+  ctx.strokeStyle = PAL.outline;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(x - 2, y + 18, 18, 22, 0, Math.PI, 0);
+  ctx.closePath();
+  ctx.fillStyle = '#8a5a2b';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(x - 2, y + 12, 5, 4, 0, 0, TAU);
+  ctx.fillStyle = '#2a1608';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x, y - 4);
+  ctx.lineTo(x, y - 18);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x, y - 18);
+  ctx.lineTo(x + 12, y - 14);
+  ctx.lineTo(x, y - 10);
+  ctx.closePath();
+  ctx.fillStyle = PAL.flag;
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
 /** HUD, радиальное меню, панели и экраны. Кнопки регистрируются при отрисовке и проверяются при тапе. */
 export class UI {
   private buttons: Btn[] = [];
@@ -75,8 +165,48 @@ export class UI {
   /** Курсор над кнопкой режима цели: её описание идёт в панель. */
   private hoverTarget = false;
   private miniPaths = new Map<string, Path[]>();
+  /** Сдвиг текущей группы интерфейса: угловые блоки прижимаются к краям экрана. */
+  private gx = 0;
+  private gy = 0;
 
   constructor(private readonly g: Game) {}
+
+  /** Сдвиг угловых блоков HUD к настоящим краям экрана с учётом выреза камеры, в логических пикселях. */
+  hud(): { l: number; r: number; t: number; b: number } {
+    const v = this.g.screen.view;
+    const s = this.g.screen.safe;
+    return { l: v.x0 + s.l, r: v.x1 - s.r - LOGICAL_W, t: v.y0 + s.t, b: v.y1 - s.b - LOGICAL_H };
+  }
+
+  private group(ctx: CanvasRenderingContext2D, dx: number, dy: number): void {
+    ctx.save();
+    ctx.translate(dx, dy);
+    this.gx = dx;
+    this.gy = dy;
+  }
+
+  private ungroup(ctx: CanvasRenderingContext2D): void {
+    ctx.restore();
+    this.gx = 0;
+    this.gy = 0;
+  }
+
+  /** Курсор мыши в координатах текущей группы. */
+  private get hov(): Vec | null {
+    const h = this.g.input.hover;
+    return h ? { x: h.x - this.gx, y: h.y - this.gy } : null;
+  }
+
+  /** Кнопка запоминается со сдвигом группы: тап попадает туда, где она нарисована. */
+  private reg(list: Btn[], b: Btn): void {
+    list.push({ ...b, x: b.x + this.gx, y: b.y + this.gy });
+  }
+
+  /** Вся видимая область вместе с полями. */
+  private viewRect(): { x: number; y: number; w: number; h: number } {
+    const v = this.g.screen.view;
+    return { x: v.x0, y: v.y0, w: v.x1 - v.x0, h: v.y1 - v.y0 };
+  }
 
   private static hit(b: Btn, p: Vec): boolean {
     if (b.round) return dist(p.x, p.y, b.x, b.y) <= b.w / 2;
@@ -121,6 +251,7 @@ export class UI {
       case 'settings': this.drawSettings(ctx); break;
       default: this.drawEnd(ctx); break;
     }
+    if (g.installHelp && (g.state === 'title' || g.state === 'settings')) this.drawInstallHelp(ctx);
   }
 
   // ───────────── helpers ─────────────
@@ -142,7 +273,7 @@ export class UI {
     ctx.lineWidth = 2.5;
     ctx.stroke();
     icon();
-    this.buttons.push({ x, y, w: r * 2, h: r * 2, round: true, onTap });
+    this.reg(this.buttons, { x, y, w: r * 2, h: r * 2, round: true, onTap });
   }
 
   private bigButton(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number, label: string, onTap: () => void, fill = '#3c8a2b', size = 26): void {
@@ -153,12 +284,13 @@ export class UI {
     ctx.lineWidth = 2.5;
     ctx.stroke();
     drawText(ctx, label, cx, cy, { size, align: 'center' });
-    this.overlayButtons.push({ x: cx - w / 2, y: cy - h / 2, w, h, onTap });
+    this.reg(this.overlayButtons, { x: cx - w / 2, y: cy - h / 2, w, h, onTap });
   }
 
   private dim(ctx: CanvasRenderingContext2D, a = 0.6): void {
     ctx.fillStyle = `rgba(12,7,2,${a})`;
-    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+    const r = this.viewRect();
+    ctx.fillRect(r.x, r.y, r.w, r.h);
   }
 
   private bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, frac: number, color: string): void {
@@ -177,6 +309,8 @@ export class UI {
 
   private drawHud(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
+    const o = this.hud();
+    this.group(ctx, o.l, o.t);
     this.panel(ctx, 14, 12, 440, 58);
     drawHoney(ctx, 46, 42, 13);
     drawText(ctx, String(g.gold), 68, 42, { size: 26, color: PAL.uiGold });
@@ -185,7 +319,10 @@ export class UI {
     drawText(ctx, String(g.lives), 192, 42, { size: 26 });
     drawFlagIcon(ctx, 258, 42, 28, PAL.flag);
     drawText(ctx, t('hud.wave', g.waves.index, g.waves.total), 280, 42, { size: 20 });
+    this.reg(this.buttons, { x: 14, y: 12, w: 440, h: 58, onTap: () => {} });
+    this.ungroup(ctx);
 
+    this.group(ctx, o.r, o.t);
     this.roundBtn(ctx, 1166, 42, 30, () => {
       drawText(ctx, `x${g.speed}`, 1166, 42, { size: 22, color: g.speed === 2 ? PAL.uiGreen : PAL.uiLight, align: 'center' });
     }, () => g.toggleSpeed());
@@ -199,19 +336,21 @@ export class UI {
         ctx.fillRect(1239, 31, 6, 22);
       }
     }, () => g.togglePause());
-    this.buttons.push({ x: 14, y: 12, w: 440, h: 58, onTap: () => {} });
+    this.ungroup(ctx);
   }
 
   /** Хотбар заклинаний: три кнопки с перезарядкой; тап выбирает, следующий тап по полю применяет. */
   private drawHotbar(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
+    const o = this.hud();
+    this.group(ctx, o.l, o.b);
     const book = g.world.spells;
     const x = 14;
     const y = 622;
     const w = 300;
     const hh = 84;
     this.panel(ctx, x, y, w, hh, 18);
-    const hover = g.input.hover;
+    const hover = this.hov;
     let hovered: number | null = null;
     for (let i = 0; i < SPELLS.length; i++) {
       const d = SPELLS[i];
@@ -260,21 +399,24 @@ export class UI {
       ctx.lineWidth = 3;
       ctx.stroke();
       drawText(ctx, d.key, bx + 20, by + 22, { size: 12 });
-      this.buttons.push({ x: bx, y: by, w: br * 2, h: br * 2, round: true, onTap: () => g.armSpell(i) });
+      this.reg(this.buttons, { x: bx, y: by, w: br * 2, h: br * 2, round: true, onTap: () => g.armSpell(i) });
     }
     this.hoverSpell = g.armedSpell ?? hovered;
     if (g.armedSpell !== null) {
       drawText(ctx, t('hotbar.pick'), x + w / 2, y - 14, { size: 15, align: 'center', color: PAL.uiGold });
     }
-    this.buttons.push({ x, y, w, h: hh, onTap: () => {} });
+    this.reg(this.buttons, { x, y, w, h: hh, onTap: () => {} });
+    this.ungroup(ctx);
   }
 
   private drawWaveButton(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
+    const o = this.hud();
+    this.group(ctx, o.r, o.b);
     const w = g.waves;
     // Общий режим цели башен: кнопка с прицелом слева от кнопки волны, тап листает по кругу.
     const td = g.targetDef;
-    const hover = g.input.hover;
+    const hover = this.hov;
     this.hoverTarget = !!hover && dist(hover.x, hover.y, 975, 668) <= 32;
     this.roundBtn(ctx, 975, 668, 32, () => {
       drawTargetIcon(ctx, 975, 660, 10);
@@ -294,7 +436,7 @@ export class UI {
         drawHoney(ctx, x + 146, y + 51, 8);
         drawText(ctx, `+${w.bonus}`, x + 160, y + 51, { size: 18, color: PAL.uiGold });
       }
-      this.buttons.push({ x, y, w: bw, h: bh, onTap: () => g.callWave() });
+      this.reg(this.buttons, { x, y, w: bw, h: bh, onTap: () => g.callWave() });
     } else if (w.index < w.total) {
       this.panel(ctx, x, y, bw, bh, 18);
       drawText(ctx, t('wave.running', w.index), x + bw / 2, y + 36, { size: 20, align: 'center', color: 'rgba(246,230,200,0.8)' });
@@ -302,6 +444,7 @@ export class UI {
       this.panel(ctx, x, y, bw, bh, 18);
       drawText(ctx, t('wave.last'), x + bw / 2, y + 36, { size: 20, align: 'center', color: PAL.uiGold });
     }
+    this.ungroup(ctx);
   }
 
   private drawInfo(ctx: CanvasRenderingContext2D): void {
@@ -342,6 +485,8 @@ export class UI {
     // Текст ужимается по ширине панели, а не вылезает за неё.
     const pw = 650;
     const avail = pw - 32;
+    const o = this.hud();
+    this.group(ctx, 0, o.t);
     this.panel(ctx, 470, 12, pw, 58);
     const fit = (text: string, size: number, min: number, weight: 'bold' | 'normal'): { text: string; size: number } => {
       let s = size;
@@ -354,6 +499,7 @@ export class UI {
     const fd = fit(desc, 14, 12, 'normal');
     drawText(ctx, ft.text, 486, 31, { size: ft.size, color: PAL.uiGold });
     drawText(ctx, fd.text, 486, 54, { size: fd.size, weight: 'normal', stroke: null, color: PAL.uiLight });
+    this.ungroup(ctx);
   }
 
   // ───────────── радиальное меню ─────────────
@@ -386,11 +532,11 @@ export class UI {
     const tw = measure(ctx, caption, 15);
     if (dirY < 0) drawText(ctx, caption, ox, oy - OPT_R - 14, { ...capOpts, align: 'center' });
     else if (dirY > 0) drawText(ctx, caption, ox, oy + OPT_R + 15, { ...capOpts, align: 'center' });
-    else if (dirX > 0 && ox + OPT_R + 12 + tw < LOGICAL_W - 6) drawText(ctx, caption, ox + OPT_R + 10, oy, { ...capOpts, align: 'left' });
-    else if (dirX < 0 && ox - OPT_R - 12 - tw > 6) drawText(ctx, caption, ox - OPT_R - 10, oy, { ...capOpts, align: 'right' });
+    else if (dirX > 0 && ox + OPT_R + 12 + tw < this.g.screen.view.x1 - 6) drawText(ctx, caption, ox + OPT_R + 10, oy, { ...capOpts, align: 'left' });
+    else if (dirX < 0 && ox - OPT_R - 12 - tw > this.g.screen.view.x0 + 6) drawText(ctx, caption, ox - OPT_R - 10, oy, { ...capOpts, align: 'right' });
     else drawText(ctx, caption, ox, oy + OPT_R + 15, { ...capOpts, align: 'center' });
 
-    this.buttons.push({ x: ox, y: oy, w: OPT_R * 2, h: OPT_R * 2, round: true, onTap });
+    this.reg(this.buttons, { x: ox, y: oy, w: OPT_R * 2, h: OPT_R * 2, round: true, onTap });
     return hot;
   }
 
@@ -400,8 +546,9 @@ export class UI {
     if (!sel) return;
     const cx = sel.type === 'plot' ? sel.plot.x : sel.tower.x;
     const cy = sel.type === 'plot' ? sel.plot.y : sel.tower.y;
-    const mcx = clamp(cx, 50 + R_MENU, LOGICAL_W - 50 - R_MENU);
-    const mcy = clamp(cy, 110 + R_MENU, LOGICAL_H - 70 - R_MENU);
+    const v = g.screen.view;
+    const mcx = clamp(cx, v.x0 + 50 + R_MENU, v.x1 - 50 - R_MENU);
+    const mcy = clamp(cy, this.hud().t + 110 + R_MENU, v.y1 - 70 - R_MENU);
 
     if (sel.type === 'tower') {
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
@@ -482,6 +629,39 @@ export class UI {
 
   // ───────────── экраны ─────────────
 
+  /** Подсказка для iPhone и iPad: Safari ставит игру на главный экран только вручную. */
+  private drawInstallHelp(ctx: CanvasRenderingContext2D): void {
+    const g = this.g;
+    this.buttons = [];
+    this.overlayButtons = [];
+    this.dim(ctx, 0.75);
+    this.panel(ctx, 270, 110, 740, 500, 22);
+    drawText(ctx, t('install.title'), 640, 160, { size: 34, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
+    const steps: ReadonlyArray<readonly [string, (x: number, y: number) => void]> = [
+      [t('install.step1'), (x, y) => drawShareIcon(ctx, x, y)],
+      [t('install.step2'), (x, y) => drawAddIcon(ctx, x, y)],
+      [t('install.step3'), (x, y) => drawAppTile(ctx, x, y)],
+    ];
+    steps.forEach(([text, icon], i) => {
+      const y = 245 + i * 85;
+      circle(ctx, 325, y, 18);
+      ctx.fillStyle = PAL.uiGold;
+      ctx.fill();
+      ctx.strokeStyle = PAL.outline;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      drawText(ctx, String(i + 1), 325, y + 1, { size: 20, align: 'center', color: PAL.outline, stroke: null });
+      icon(392, y);
+      const lines = text.split('\n').flatMap((part) => wrapText(ctx, part, 540, 20, 'bold'));
+      lines.forEach((ln, k) => drawText(ctx, ln, 440, y + (k - (lines.length - 1) / 2) * 25, { size: 20 }));
+    });
+    const note = wrapText(ctx, t('install.note'), 640, 16);
+    note.forEach((ln, k) => drawText(ctx, ln, 640, 498 + k * 20, { size: 16, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.8)' }));
+    this.bigButton(ctx, 640, 562, 220, 56, t('install.ok'), () => g.closeInstallHelp(), '#3c8a2b', 22);
+    // Тап мимо кнопки тоже закрывает подсказку.
+    this.reg(this.overlayButtons, { ...this.viewRect(), onTap: () => g.closeInstallHelp() });
+  }
+
   private drawSettings(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
     const off = 'rgba(90,60,30,0.9)';
@@ -498,13 +678,15 @@ export class UI {
     drawText(ctx, t('settings.fullscreen'), 340, 470, { size: 24 });
     if (isInstalledApp()) {
       drawText(ctx, t('settings.fsApp'), 580, 470, { size: 18, color: PAL.uiGold });
-    } else if (!fullscreenSupported()) {
-      // iPhone не умеет полный экран в браузере: только через значок на главном экране.
-      drawText(ctx, t('settings.fsHint'), 580, 470, { size: 18, color: PAL.uiGold });
-    } else {
+    } else if (fullscreenSupported()) {
       const want = g.fullscreenWanted;
       this.bigButton(ctx, 660, 470, 160, 52, t('settings.on'), () => g.setFullscreen(true), want ? '#3c8a2b' : off, 20);
       this.bigButton(ctx, 840, 470, 160, 52, t('settings.offBtn'), () => g.setFullscreen(false), want ? off : '#3c8a2b', 20);
+    } else if (manualInstall()) {
+      // iPhone не умеет полный экран в браузере: только со значка на главном экране.
+      this.bigButton(ctx, 750, 470, 340, 52, t('settings.howInstall'), () => g.showInstallHelp(), '#3c8a2b', 18);
+    } else {
+      drawText(ctx, t('settings.fsHint'), 580, 470, { size: 18, color: PAL.uiGold });
     }
     this.bigButton(ctx, 640, 580, 240, 60, t('settings.back'), () => g.closeSettings(), off, 22);
   }
@@ -521,7 +703,7 @@ export class UI {
     ctx.strokeStyle = PAL.outline;
     ctx.lineWidth = 2.5;
     ctx.stroke();
-    this.overlayButtons.push({ x: bx - 14, y: y - 26, w: bw + 28, h: 52, onTap: (p) => set(clamp((p.x - bx) / bw, 0, 1)) });
+    this.reg(this.overlayButtons, { x: bx - 14, y: y - 26, w: bw + 28, h: 52, onTap: (p) => set(clamp((p.x - bx) / bw, 0, 1)) });
     this.bigButton(ctx, bx - 52, y, 46, 46, '−', () => set(value - 0.1), 'rgba(90,60,30,0.9)', 26);
     this.bigButton(ctx, bx + bw + 52, y, 46, 46, '+', () => set(value + 0.1), 'rgba(90,60,30,0.9)', 26);
     drawText(ctx, value <= 0 ? t('settings.off') : `${Math.round(value * 100)}%`, bx + bw + 88, y, { size: 20, color: PAL.uiGold });
@@ -533,10 +715,20 @@ export class UI {
     drawText(ctx, gameTitle(), 640, 100, { size: 60, align: 'center', color: PAL.uiGold, strokeWidth: 10 });
     drawText(ctx, t('title.subtitle'), 640, 158, { size: 20, align: 'center', weight: 'normal', color: '#f6e6c8', strokeWidth: 5 });
     this.bigButton(ctx, 640, 630, 300, 74, t('title.play'), () => g.toLevels(), '#3c8a2b', 30);
+    const o = this.hud();
+    this.group(ctx, o.r, o.b);
     this.bigButton(ctx, 1150, 660, 200, 48, t('title.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 18);
-    // Chrome готов поставить игру значком на главный экран: оттуда она сразу открывается на весь экран.
-    if (canInstall()) this.bigButton(ctx, 130, 660, 200, 48, t('title.install'), () => promptInstall(), '#3c8a2b', 18);
+    this.ungroup(ctx);
+    // Chrome сам предлагает установку; на iPhone и iPad показываем, как поставить значок вручную.
+    const install = canInstall() ? () => promptInstall() : manualInstall() ? () => g.showInstallHelp() : null;
+    if (install) {
+      this.group(ctx, o.l, o.b);
+      this.bigButton(ctx, 130, 660, 200, 48, t('title.install'), install, '#3c8a2b', 18);
+      this.ungroup(ctx);
+    }
+    this.group(ctx, 0, o.b);
     drawText(ctx, t('title.controls'), 640, 698, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
+    this.ungroup(ctx);
   }
 
   private pathsFor(lv: LevelDef): Path[] {
@@ -642,7 +834,7 @@ export class UI {
       ctx.lineWidth = 2;
       ctx.stroke();
       drawText(ctx, stars > 0 ? t('levels.replay') : t('levels.play'), x + w / 2, y + h - 30, { size: 17, align: 'center' });
-      this.overlayButtons.push({ x, y, w, h, onTap: () => g.chooseLevel(i) });
+      this.reg(this.overlayButtons, { x, y, w, h, onTap: () => g.chooseLevel(i) });
     } else {
       roundRect(ctx, x, y, w, h, 18);
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
@@ -675,7 +867,7 @@ export class UI {
     drawText(ctx, t('levels.difficulty', difficultyText(g.difficulty.id).name.toLowerCase()), 300, 680, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
     const label = g.resetArmed ? t('levels.resetConfirm') : t('levels.reset');
     drawText(ctx, label, 980, 680, { size: 14, align: 'center', weight: 'normal', stroke: null, color: g.resetArmed ? PAL.uiRed : 'rgba(246,230,200,0.55)' });
-    this.overlayButtons.push({ x: 860, y: 662, w: 240, h: 36, onTap: () => g.resetProgressTap() });
+    this.reg(this.overlayButtons, { x: 860, y: 662, w: 240, h: 36, onTap: () => g.resetProgressTap() });
   }
 
   /** Перки за звёзды: восемь улучшений в два столбца. */
@@ -724,7 +916,7 @@ export class UI {
       ctx.lineWidth = 2;
       ctx.stroke();
       drawText(ctx, maxed ? t('perks.max') : t('perks.buy', p.cost), bx + 54, by + 21, { size: 16, align: 'center', color: can || maxed ? PAL.uiLight : 'rgba(246,230,200,0.5)' });
-      if (can) this.overlayButtons.push({ x: bx, y: by, w: 108, h: 42, onTap: () => g.buyPerk(p.id) });
+      if (can) this.reg(this.overlayButtons, { x: bx, y: by, w: 108, h: 42, onTap: () => g.buyPerk(p.id) });
     });
     this.bigButton(ctx, 540, 600, 220, 56, t('perks.back'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
     this.bigButton(ctx, 790, 600, 260, 56, t('perks.refund'), () => g.refundPerks(), 'rgba(90,60,30,0.9)', 20);
@@ -763,7 +955,7 @@ export class UI {
       ctx.lineWidth = 2;
       ctx.stroke();
       drawText(ctx, difficultyText(d.id).name, x + bw / 2, 432 + bh / 2, { size: 18, align: 'center', color: on ? PAL.uiLight : 'rgba(246,230,200,0.7)' });
-      this.overlayButtons.push({ x, y: 432, w: bw, h: bh, onTap: () => g.setDifficulty(d.id) });
+      this.reg(this.overlayButtons, { x, y: 432, w: bw, h: bh, onTap: () => g.setDifficulty(d.id) });
     });
     drawText(ctx, difficultyText(cur.id).desc, 640, 494, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
     this.bigButton(ctx, 700, 544, 260, 60, t('intro.fight'), () => g.start());
@@ -808,6 +1000,6 @@ export class UI {
     this.bigButton(ctx, 640, 400, 220, 64, t('pause.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 22);
     this.bigButton(ctx, 880, 400, 220, 64, t('pause.levels'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
     drawText(ctx, t('pause.hint'), 640, 470, { size: 16, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
-    this.overlayButtons.push({ x: 0, y: 0, w: LOGICAL_W, h: LOGICAL_H, onTap: () => g.togglePause() });
+    this.reg(this.overlayButtons, { ...this.viewRect(), onTap: () => g.togglePause() });
   }
 }

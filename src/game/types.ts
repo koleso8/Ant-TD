@@ -59,7 +59,7 @@ export interface GameCtx {
   readonly time: number;
   addGold(n: number, x?: number, y?: number): void;
   loseLives(n: number): void;
-  spawnEnemy(kind: EnemyKind, hpMul: number, pathIndex: number): void;
+  spawnEnemy(kind: EnemyKind, hpMul: number, pathIndex: number): Enemy;
   /** Появление врага прямо на тропе, в заданной точке по дистанции (призыв матки). */
   spawnEnemyAt(kind: EnemyKind, hpMul: number, path: Path, progress: number): void;
   onEnemyKilled(e: Enemy): void;

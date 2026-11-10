@@ -340,17 +340,18 @@ export function drawBeetle(ctx: Ctx, x: number, y: number, angle: number, s: num
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-24, 0); ctx.stroke();
   ctx.fillStyle = light;
-  ctx.globalAlpha = 0.85;
+  const a0 = ctx.globalAlpha;
+  ctx.globalAlpha = a0 * 0.85;
   ell(ctx, -6, -8, 8, 3, 0.15); ctx.fill();
   ell(ctx, -6, 8, 8, 3, -0.15); ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = a0;
   outline(ctx, 2.8);
   ell(ctx, 13, 0, 8, 10);
   fs(ctx, dark);
   ctx.fillStyle = light;
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = a0 * 0.5;
   ell(ctx, 12, -4, 3, 2.5); ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = a0;
   ell(ctx, 22, 0, 5.5, 5);
   fs(ctx, dark);
   if (rhino) {
@@ -972,6 +973,43 @@ export interface TerrainInput {
   theme: LevelTheme;
   /** Прямоугольники, где декор не нужен (под HUD). */
   reserved: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
+  /** Видимая область: на широких и высоких экранах мир дорисовывается на полях вокруг кадра. */
+  view?: ViewBox;
+  /** Генератор для полей: декор самого кадра не перетасовывается от того, широкий ли экран. */
+  marginRng?: Rng;
+}
+
+/** Видимая часть мира в логических координатах (кадр 1280x720 плюс поля). */
+export interface ViewBox { x0: number; y0: number; x1: number; y1: number }
+
+/** Тропа начинается за краем кадра: откуда она приходит (точка начала и направление вдоль тропы). */
+export interface PathLead { x: number; y: number; dx: number; dy: number }
+
+/** Длина продолжения тропы на полях: с запасом до края любого экрана. */
+const LEAD_LEN = 600;
+
+export function pathLead(path: Path, w: number, h: number): PathLead | null {
+  const s = path.pts[0];
+  if (s.x >= 0 && s.x <= w && s.y >= 0 && s.y <= h) return null;
+  const a = path.at(0).angle;
+  return { x: s.x, y: s.y, dx: Math.cos(a), dy: Math.sin(a) };
+}
+
+/** Сколько продолжения тропы видно от её начала до края видимой области; 0, если начало за краем экрана. */
+export function leadRoom(l: PathLead, v: ViewBox): number {
+  let t = Infinity;
+  if (l.dx > 1e-6) t = Math.min(t, (l.x - v.x0) / l.dx);
+  if (l.dx < -1e-6) t = Math.min(t, (v.x1 - l.x) / -l.dx);
+  if (l.dy > 1e-6) t = Math.min(t, (l.y - v.y0) / l.dy);
+  if (l.dy < -1e-6) t = Math.min(t, (v.y1 - l.y) / -l.dy);
+  return Number.isFinite(t) ? Math.max(0, t) : 0;
+}
+
+function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const k = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy || 1)));
+  return Math.hypot(px - (ax + vx * k), py - (ay + vy * k));
 }
 
 function hexA(hex: string, a: number): string {
@@ -1074,37 +1112,43 @@ export function drawStump(ctx: Ctx, x: number, y: number, rng: Rng): void {
 }
 
 /** Ручей поперёк карты: берега, вода с бликами, камни. */
-function drawWater(ctx: Ctx, w: number, band: { y: number; h: number }, rng: Rng): void {
+function drawWater(ctx: Ctx, w: number, band: { y: number; h: number }, rng: Rng, v: ViewBox, mr: Rng): void {
   const { y, h } = band;
   const edgeTop = (x: number) => y + Math.sin(x * 0.03) * 4;
   const edgeBottom = (x: number) => y + h + Math.cos(x * 0.025) * 4;
+  // Точки берега с шагом 40 от нуля: в кадре те же вершины, что и раньше, на полях продолжение.
+  const a = Math.min(0, Math.floor(v.x0 / 40) * 40 - 40);
+  const b = Math.max(w, Math.ceil(v.x1 / 40) * 40 + 40);
+  const shape = (off: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(a, edgeTop(a) - off);
+    for (let x = a; x <= b; x += 40) ctx.lineTo(x, edgeTop(x) - off);
+    for (let x = b; x >= a; x -= 40) ctx.lineTo(x, edgeBottom(x) + off);
+    ctx.closePath();
+    ctx.fill();
+  };
   ctx.fillStyle = '#9c7f55';
-  ctx.beginPath();
-  ctx.moveTo(-10, edgeTop(0) - 14);
-  for (let x = 0; x <= w; x += 40) ctx.lineTo(x, edgeTop(x) - 14);
-  ctx.lineTo(w + 10, edgeBottom(w) + 14);
-  for (let x = w; x >= 0; x -= 40) ctx.lineTo(x, edgeBottom(x) + 14);
-  ctx.closePath();
-  ctx.fill();
+  shape(14);
   const g = ctx.createLinearGradient(0, y, 0, y + h);
   g.addColorStop(0, '#4f8fc0');
   g.addColorStop(1, '#3a6f9c');
   ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.moveTo(-10, edgeTop(0));
-  for (let x = 0; x <= w; x += 40) ctx.lineTo(x, edgeTop(x));
-  ctx.lineTo(w + 10, edgeBottom(w));
-  for (let x = w; x >= 0; x -= 40) ctx.lineTo(x, edgeBottom(x));
-  ctx.closePath();
-  ctx.fill();
+  shape(0);
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
   ctx.lineWidth = 2;
-  for (let i = 0; i < 44; i++) {
-    const rx = rng.range(10, w - 10);
-    const ry = rng.range(y + 10, y + h - 10);
+  const ripple = (rx: number, ry: number): void => {
     ctx.beginPath(); ctx.moveTo(rx - 10, ry); ctx.quadraticCurveTo(rx, ry - 3, rx + 10, ry); ctx.stroke();
-  }
+  };
+  for (let i = 0; i < 44; i++) ripple(rng.range(10, w - 10), rng.range(y + 10, y + h - 10));
+  // Поля: та же плотность ряби и камней, что в кадре.
+  const left = Math.max(0, -v.x0);
+  const right = Math.max(0, v.x1 - w);
+  const sideX = (pad: number): number => (mr.next() * (left + right) < left ? mr.range(v.x0 + pad, -pad) : mr.range(w + pad, v.x1 - pad));
+  if (left + right > 20) for (let i = 0; i < Math.round((44 * (left + right)) / w); i++) ripple(sideX(10), mr.range(y + 10, y + h - 10));
   for (let i = 0; i < 7; i++) pebble(ctx, rng.range(40, w - 40), rng.range(y + 16, y + h - 16), rng.range(8, 14), rng.range(5, 9));
+  if (left + right > 80) {
+    for (let i = 0; i < Math.round((7 * (left + right)) / w); i++) pebble(ctx, sideX(40), mr.range(y + 16, y + h - 16), mr.range(8, 14), mr.range(5, 9));
+  }
 }
 
 /** Бревно-мост там, где тропа пересекает воду. */
@@ -1137,56 +1181,81 @@ function drawBridge(ctx: Ctx, path: Path, band: { y: number; h: number }): void 
 }
 
 /** Стена термитника вдоль верхнего края и норы в начале каждой тропы. */
-function drawWall(ctx: Ctx, w: number, h: number, paths: readonly Path[], rng: Rng): void {
+function drawWall(ctx: Ctx, w: number, h: number, paths: readonly Path[], rng: Rng, v: ViewBox, mr: Rng): void {
+  const L = Math.min(-10, v.x0 - 10);
+  const R = Math.max(w + 10, v.x1 + 10);
+  const T = Math.min(-10, v.y0 - 10);
   const g = ctx.createLinearGradient(0, 0, 0, h);
   g.addColorStop(0, '#6b4f32');
   g.addColorStop(1, '#8a6a45');
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.moveTo(-10, -10);
-  ctx.lineTo(w + 10, -10);
-  ctx.lineTo(w + 10, h - 20);
+  ctx.moveTo(L, T);
+  ctx.lineTo(R, T);
+  ctx.lineTo(R, h - 20);
+  for (let x = R; x > w; x -= 30) ctx.lineTo(x, h - 20 + Math.sin(x * 0.05) * 10 + mr.range(-4, 4));
   for (let x = w; x >= 0; x -= 30) ctx.lineTo(x, h - 20 + Math.sin(x * 0.05) * 10 + rng.range(-4, 4));
-  ctx.lineTo(-10, h - 20);
+  for (let x = -30; x >= L; x -= 30) ctx.lineTo(x, h - 20 + Math.sin(x * 0.05) * 10 + mr.range(-4, 4));
+  ctx.lineTo(L, h - 20);
   ctx.closePath();
   ctx.fill();
   outline(ctx, 4);
   ctx.stroke();
   ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.lineWidth = 2;
-  for (let i = 0; i < 24; i++) {
-    const x = rng.range(0, w);
-    const y = rng.range(10, h - 40);
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + rng.range(-30, 30), y + rng.range(5, 25)); ctx.stroke();
+  const crack = (r: Rng, x: number, y: number): void => {
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + r.range(-30, 30), y + r.range(5, 25)); ctx.stroke();
+  };
+  for (let i = 0; i < 24; i++) crack(rng, rng.range(0, w), rng.range(10, h - 40));
+  // Поля: трещины и блики с той же плотностью, что в кадре; кадр они не трогают.
+  const outside = (x: number, y: number): boolean => x < 0 || x > w || y < 0;
+  const extra = ((R - L) * (h - 20 - T)) / (w * (h - 20)) - 1;
+  const spot = (pad: number): Vec | null => {
+    for (let i = 0; i < 16; i++) {
+      const x = mr.range(L + pad, R - pad);
+      const y = mr.range(T + pad, h - 40);
+      if (outside(x, y)) return { x, y };
+    }
+    return null;
+  };
+  for (let i = 0; i < Math.round(24 * extra); i++) {
+    const p = spot(10);
+    if (p) crack(mr, p.x, p.y);
   }
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
   for (let i = 0; i < 30; i++) {
     ell(ctx, rng.range(0, w), rng.range(0, h - 30), rng.range(10, 30), rng.range(5, 12));
     ctx.fill();
   }
+  for (let i = 0; i < Math.round(30 * extra); i++) {
+    const p = spot(0);
+    if (!p) continue;
+    ell(ctx, p.x, p.y, mr.range(10, 30), mr.range(5, 12));
+    ctx.fill();
+  }
   const sh = ctx.createLinearGradient(0, h - 20, 0, h + 30);
   sh.addColorStop(0, 'rgba(0,0,0,0.35)');
   sh.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = sh;
-  ctx.fillRect(0, h - 20, w, 50);
+  ctx.fillRect(L, h - 20, R - L, 50);
   for (const p of paths) {
-    const s = p.pts[0];
+    const st = p.pts[0];
     outline(ctx, 3);
-    ell(ctx, s.x, s.y - 6, 34, 26);
+    ell(ctx, st.x, st.y - 6, 34, 26);
     fs(ctx, '#3a2412');
     ctx.fillStyle = '#120803';
-    ell(ctx, s.x, s.y - 4, 24, 17);
+    ell(ctx, st.x, st.y - 4, 24, 17);
     ctx.fill();
   }
 }
 
 /** Пещера: виньетка и камни по краям. */
-function drawCaveWalls(ctx: Ctx, w: number, h: number, rng: Rng): void {
+function drawCaveWalls(ctx: Ctx, w: number, h: number, rng: Rng, v: ViewBox, mr: Rng): void {
   const g = ctx.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, h * 0.95);
   g.addColorStop(0, 'rgba(0,0,0,0)');
   g.addColorStop(1, 'rgba(0,0,0,0.55)');
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(v.x0, v.y0, v.x1 - v.x0, v.y1 - v.y0);
   outline(ctx, 3);
   for (let i = 0; i < 26; i++) {
     const top = i % 2 === 0;
@@ -1195,14 +1264,34 @@ function drawCaveWalls(ctx: Ctx, w: number, h: number, rng: Rng): void {
     ell(ctx, x, y, rng.range(30, 70), rng.range(18, 40), rng.range(-0.4, 0.4));
     fs(ctx, rng.next() < 0.5 ? '#3a2d24' : '#4a3a2e');
   }
+  const rock = (x: number, y: number, rx: number, ry: number): void => {
+    ell(ctx, x, y, rx, ry, mr.range(-0.4, 0.4));
+    fs(ctx, mr.next() < 0.5 ? '#3a2d24' : '#4a3a2e');
+  };
+  // Боковые поля: та же кромка скал сверху и снизу.
+  for (const [xa, xb] of [[v.x0 - 20, -20], [w + 20, v.x1 + 20]]) {
+    if (xb - xa < 10) continue;
+    const n = Math.round((26 * (xb - xa)) / w) + 2;
+    for (let i = 0; i < n; i++) {
+      const top = i % 2 === 0;
+      rock(mr.range(xa, xb), top ? mr.range(-20, 30) : mr.range(h - 30, h + 20), mr.range(30, 70), mr.range(18, 40));
+    }
+  }
+  // Высокий экран: над и под кадром сплошная скала.
+  const band = (ya: number, yb: number): void => {
+    for (let y = ya; y < yb; y += 32) {
+      for (let x = v.x0 - 40; x < v.x1 + 40; x += 52) rock(x + mr.range(-14, 14), y + mr.range(-8, 8), mr.range(30, 56), mr.range(20, 34));
+    }
+  };
+  if (v.y0 < -12) band(v.y0 - 16, -12);
+  if (v.y1 > h + 12) band(h + 24, v.y1 + 24);
 }
 
 /** Павший дуб: ствол вдоль верхнего края и корни, уходящие в землю. */
-function drawOak(ctx: Ctx, w: number, rng: Rng): void {
-  for (let i = 0; i < 6; i++) {
-    const x0 = 80 + i * 220 + rng.range(-40, 40);
-    const len = rng.range(120, 260);
-    const bend = rng.range(-90, 90);
+function drawOak(ctx: Ctx, w: number, rng: Rng, v: ViewBox, mr: Rng): void {
+  const root = (r: Rng, x0: number): void => {
+    const len = r.range(120, 260);
+    const bend = r.range(-90, 90);
     const layers: ReadonlyArray<readonly [number, string]> = [[22, OUT], [16, '#5a3a1f'], [6, 'rgba(255,255,255,0.08)']];
     for (const [wd, col] of layers) {
       ctx.strokeStyle = col;
@@ -1213,13 +1302,18 @@ function drawOak(ctx: Ctx, w: number, rng: Rng): void {
       ctx.quadraticCurveTo(x0 + bend * 0.5, 60 + len * 0.6, x0 + bend, 60 + len);
       ctx.stroke();
     }
-  }
+  };
+  for (let i = 0; i < 6; i++) root(rng, 80 + i * 220 + rng.range(-40, 40));
+  for (let x = -140; x > v.x0 - 60; x -= 220) root(mr, x + mr.range(-40, 40));
+  for (let x = w + 120; x < v.x1 + 60; x += 220) root(mr, x + mr.range(-40, 40));
+  const L = Math.min(-20, v.x0 - 20);
+  const R = Math.max(w + 20, v.x1 + 20);
   outline(ctx, 4);
   ctx.beginPath();
-  ctx.moveTo(-20, -30);
-  ctx.lineTo(w + 20, -30);
-  ctx.lineTo(w + 20, 62);
-  ctx.quadraticCurveTo(w / 2, 84, -20, 62);
+  ctx.moveTo(L, -30);
+  ctx.lineTo(R, -30);
+  ctx.lineTo(R, 62);
+  ctx.quadraticCurveTo(w / 2, 84, L, 62);
   ctx.closePath();
   const g = ctx.createLinearGradient(0, -30, 0, 80);
   g.addColorStop(0, '#6b4424');
@@ -1231,16 +1325,61 @@ function drawOak(ctx: Ctx, w: number, rng: Rng): void {
     const y = 2 + i * 7 + rng.range(-2, 2);
     ctx.beginPath();
     ctx.moveTo(0, y);
-    for (let x = 0; x <= w; x += 60) ctx.lineTo(x, y + rng.range(-3, 3));
+    let fy = y;
+    let lx = 0;
+    let ly = y;
+    for (let x = 0; x <= w; x += 60) {
+      ly = y + rng.range(-3, 3);
+      lx = x;
+      if (x === 0) fy = ly;
+      ctx.lineTo(x, ly);
+    }
     ctx.stroke();
+    // Кора на полях продолжает ту же линию.
+    if (L < -20) {
+      ctx.beginPath();
+      ctx.moveTo(0, fy);
+      for (let x = -60; x >= L; x -= 60) ctx.lineTo(x, y + mr.range(-3, 3));
+      ctx.stroke();
+    }
+    if (R > w + 20) {
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      for (let x = lx + 60; x <= R; x += 60) ctx.lineTo(x, y + mr.range(-3, 3));
+      ctx.stroke();
+    }
   }
 }
 
 /** Статичный фон: рисуется один раз в offscreen-канвас. */
 export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
   const { w, h, paths, plots, anthill, rng, theme } = t;
+  const v = t.view ?? { x0: 0, y0: 0, x1: w, y1: h };
+  // Поля вокруг кадра рисуются своим генератором: так декор самого кадра не сбивается от ширины экрана.
+  const mr = t.marginRng ?? rng;
+  const leads = paths.map((p) => pathLead(p, w, h));
+  const inCore = (x: number, y: number) => x >= 0 && x <= w && y >= 0 && y <= h;
+  // Во сколько раз поля больше кадра: столько же декора на ту же площадь.
+  const extra = Math.max(0, ((v.x1 - v.x0) * (v.y1 - v.y0)) / (w * h) - 1);
+  const marginCount = (n: number) => Math.round(n * extra);
+  const marginPoint = (pad: number): Vec | null => {
+    for (let i = 0; i < 16; i++) {
+      const x = mr.range(v.x0 + pad, v.x1 - pad);
+      const y = mr.range(v.y0 + pad, v.y1 - pad);
+      if (!inCore(x, y)) return { x, y };
+    }
+    return null;
+  };
+
   ctx.fillStyle = theme.grass;
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(v.x0, v.y0, v.x1 - v.x0, v.y1 - v.y0);
+  for (let i = 0; i < marginCount(55); i++) {
+    const p = marginPoint(-60);
+    if (!p) continue;
+    ctx.fillStyle = mr.next() < 0.5 ? hexA(theme.grassLight, 0.3) : hexA(theme.grassDark, 0.3);
+    ell(ctx, p.x, p.y, mr.range(40, 130), mr.range(20, 60), mr.range(0, TAU));
+    ctx.fill();
+  }
   for (let i = 0; i < 55; i++) {
     ctx.fillStyle = rng.next() < 0.5 ? hexA(theme.grassLight, 0.3) : hexA(theme.grassDark, 0.3);
     ell(ctx, rng.range(0, w), rng.range(0, h), rng.range(40, 130), rng.range(20, 60), rng.range(0, TAU));
@@ -1255,13 +1394,18 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
     ctx.fillStyle = (c + r) % 2 === 0 ? light : dark;
     ctx.fillRect(p.x - CELL / 2, p.y - CELL / 2, CELL, CELL);
   }
-  const nearestPath = (x: number, y: number) => Math.min(...paths.map((p) => p.nearest(x, y).dist));
+  const leadDist = (x: number, y: number): number => {
+    let d = Infinity;
+    for (const l of leads) if (l) d = Math.min(d, segDist(x, y, l.x, l.y, l.x - l.dx * LEAD_LEN, l.y - l.dy * LEAD_LEN));
+    return d;
+  };
+  const nearestPath = (x: number, y: number) => Math.min(leadDist(x, y), ...paths.map((p) => p.nearest(x, y).dist));
   const farFromPath = (x: number, y: number, d: number) => nearestPath(x, y) > d;
   const inReserved = (x: number, y: number) => t.reserved.some((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
   const inWater = (y: number) => !!theme.water && y > theme.water.y - 26 && y < theme.water.y + theme.water.h + 26;
   const inWall = (y: number) => !!theme.wall && y < theme.wall.h + 30;
-  if (theme.water) drawWater(ctx, w, theme.water, rng);
-  if (theme.oak) drawOak(ctx, w, rng);
+  if (theme.water) drawWater(ctx, w, theme.water, rng, v, mr);
+  if (theme.oak) drawOak(ctx, w, rng, v, mr);
   for (let i = 0; i < 170; i++) {
     const x = rng.range(10, w - 10);
     const y = rng.range(90, h - 10);
@@ -1269,23 +1413,33 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
     if (theme.cave) pebble(ctx, x, y, rng.range(3, 6), rng.range(2, 4));
     else grassTuft(ctx, x, y, rng, theme.grassDark, theme.grassLight);
   }
+  for (let i = 0; i < marginCount(170); i++) {
+    const p = marginPoint(10);
+    if (!p || !farFromPath(p.x, p.y, 42) || inReserved(p.x, p.y) || inWater(p.y) || inWall(p.y)) continue;
+    if (theme.cave) pebble(ctx, p.x, p.y, mr.range(3, 6), mr.range(2, 4));
+    else grassTuft(ctx, p.x, p.y, mr, theme.grassDark, theme.grassLight);
+  }
 
-  // тропы
+  // тропы: те, что приходят из-за края кадра, на полях тянутся до края экрана
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  const strokePath = (path: Path, width: number, color: string) => {
+  const lines = paths.map((p, i) => {
+    const l = leads[i];
+    return l ? [{ x: l.x - l.dx * LEAD_LEN, y: l.y - l.dy * LEAD_LEN }, ...p.pts] : p.pts;
+  });
+  const strokeLine = (pts: readonly Vec[], width: number, color: string) => {
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
     ctx.beginPath();
-    for (let i = 0; i < path.pts.length; i++) {
-      const p = path.pts[i];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
       if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
     }
     ctx.stroke();
   };
-  for (const path of paths) strokePath(path, 72, theme.dirtDark);
-  for (const path of paths) strokePath(path, 60, theme.dirt);
-  for (const path of paths) strokePath(path, 30, 'rgba(255,236,200,0.16)');
+  for (const pts of lines) strokeLine(pts, 72, theme.dirtDark);
+  for (const pts of lines) strokeLine(pts, 60, theme.dirt);
+  for (const pts of lines) strokeLine(pts, 30, 'rgba(255,236,200,0.16)');
   if (theme.water) for (const path of paths) drawBridge(ctx, path, theme.water);
   for (const path of paths) {
     for (let d = 10; d < path.length; d += 22) {
@@ -1311,37 +1465,68 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
       }
     }
   }
+  for (const l of leads) {
+    if (!l) continue;
+    const a = Math.atan2(l.dy, l.dx);
+    const nx = -Math.sin(a);
+    const ny = Math.cos(a);
+    for (let d = 12; d < LEAD_LEN; d += 22) {
+      const x = l.x - l.dx * d;
+      const y = l.y - l.dy * d;
+      if (x < v.x0 - 40 || x > v.x1 + 40 || y < v.y0 - 40 || y > v.y1 + 40) break;
+      const off = mr.range(-18, 18);
+      ctx.fillStyle = 'rgba(60,30,5,0.12)';
+      ell(ctx, x + nx * off, y + ny * off, mr.range(3, 6), mr.range(2, 3.5), a);
+      ctx.fill();
+      for (let side = -1; side <= 1; side += 2) {
+        if (mr.next() < 0.45) {
+          const k = side * mr.range(31, 36);
+          pebble(ctx, x + nx * k, y + ny * k, mr.range(2.5, 4.5), mr.range(1.8, 3.2));
+        }
+      }
+    }
+  }
 
   // декор
   const colors = ['#ff8fb1', '#fff1f1', '#ffd54f', '#c89bff', '#ff7a59'];
   const pP = theme.puddles;
   const pM = pP + theme.mushrooms;
   const pF = pM + theme.flowers;
+  const decorOk = (x: number, y: number): boolean => {
+    if (!farFromPath(x, y, 54)) return false;
+    if (inReserved(x, y) || inWater(y) || inWall(y)) return false;
+    if (Math.hypot(anthill.x - x, anthill.y - y) < 130) return false;
+    if (theme.stump && Math.hypot(theme.stump.x - x, theme.stump.y - y) < 115) return false;
+    return true;
+  };
+  const decorAt = (r: Rng, x: number, y: number): void => {
+    const roll = r.next();
+    if (roll < pP) puddle(ctx, x, y, r);
+    else if (roll < pM) {
+      if (theme.night) glowSpot(ctx, x, y - 6, 26, '140,255,170', 0.35);
+      mushroom(ctx, x, y, r.range(6, 10), r.int(0, 3), theme.night ? '#6fd3a0' : PAL.mushroomCap, theme.night ? '#eafff3' : '#fff3e6');
+    } else if (roll < pF) flower(ctx, x, y, r.pick(colors));
+    else {
+      const k = r.next();
+      if (k < 0.38) pebble(ctx, x, y, r.range(4, 9), r.range(3, 6));
+      else if (k < 0.66) clover(ctx, x, y, r.range(4, 6));
+      else if (k < 0.84) twigDecor(ctx, x, y, r);
+      else leaf(ctx, x, y, r.range(9, 14), r.range(4, 6), r.range(0, TAU), r.pick(['#c77f3a', '#d9a24a', '#9bbf3f']), 'rgba(60,30,5,0.5)');
+    }
+  };
   for (let i = 0; i < 130; i++) {
     const x = rng.range(16, w - 16);
     const y = rng.range(16, h - 16);
-    if (!farFromPath(x, y, 54)) continue;
-    if (inReserved(x, y) || inWater(y) || inWall(y)) continue;
-    if (Math.hypot(anthill.x - x, anthill.y - y) < 130) continue;
-    if (theme.stump && Math.hypot(theme.stump.x - x, theme.stump.y - y) < 115) continue;
-    const r = rng.next();
-    if (r < pP) puddle(ctx, x, y, rng);
-    else if (r < pM) {
-      if (theme.night) glowSpot(ctx, x, y - 6, 26, '140,255,170', 0.35);
-      mushroom(ctx, x, y, rng.range(6, 10), rng.int(0, 3), theme.night ? '#6fd3a0' : PAL.mushroomCap, theme.night ? '#eafff3' : '#fff3e6');
-    } else if (r < pF) flower(ctx, x, y, rng.pick(colors));
-    else {
-      const k = rng.next();
-      if (k < 0.38) pebble(ctx, x, y, rng.range(4, 9), rng.range(3, 6));
-      else if (k < 0.66) clover(ctx, x, y, rng.range(4, 6));
-      else if (k < 0.84) twigDecor(ctx, x, y, rng);
-      else leaf(ctx, x, y, rng.range(9, 14), rng.range(4, 6), rng.range(0, TAU), rng.pick(['#c77f3a', '#d9a24a', '#9bbf3f']), 'rgba(60,30,5,0.5)');
-    }
+    if (decorOk(x, y)) decorAt(rng, x, y);
+  }
+  for (let i = 0; i < marginCount(130); i++) {
+    const p = marginPoint(16);
+    if (p && decorOk(p.x, p.y)) decorAt(mr, p.x, p.y);
   }
 
   if (theme.stump) drawStump(ctx, theme.stump.x, theme.stump.y, rng);
-  if (theme.wall) drawWall(ctx, w, theme.wall.h, paths, rng);
-  if (theme.cave) drawCaveWalls(ctx, w, h, rng);
+  if (theme.wall) drawWall(ctx, w, theme.wall.h, paths, rng, v, mr);
+  if (theme.cave) drawCaveWalls(ctx, w, h, rng, v, mr);
   drawAnthill(ctx, anthill.x, anthill.y, rng);
 }
 

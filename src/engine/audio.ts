@@ -4,6 +4,7 @@
  * Модуль только для браузера: симуляция его не импортирует.
  */
 import type { SoundId } from '../game/types';
+import { isIOS } from './device';
 
 export type MusicMode = 'menu' | 'battle';
 
@@ -54,6 +55,19 @@ interface Phrases { a: Phrase; b: Phrase; a2: Phrase }
 
 interface Graph { ctx: AudioContext; music: GainNode; sfx: GainNode; noise: AudioBuffer }
 
+/** Четверть секунды тишины в WAV (8 кГц, 8 бит): собираем на лету, звуковой файл не нужен. */
+function silentWav(): string {
+  const n = 2000;
+  const v = new DataView(new ArrayBuffer(44 + n));
+  const str = (o: number, s: string): void => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+  str(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+  return URL.createObjectURL(new Blob([v.buffer], { type: 'audio/wav' }));
+}
+
 /** Минимальная пауза между одинаковыми эффектами, чтобы залп десяти башен не превращался в треск. */
 const GAPS: Partial<Record<SoundId, number>> = {
   click: 0.03, hit: 0.09, hammer: 0.1, shotAcid: 0.05, shotCatapult: 0.08, impact: 0.06, acidHit: 0.05,
@@ -81,15 +95,23 @@ class AudioEngine {
   private timer: number | null = null;
   private phraseCache = new Map<MusicMode, Phrases>();
   private lastPlayed = new Map<SoundId, number>();
+  /** iPhone или iPad: там звук глушится переключателем беззвучного режима. */
+  private ios = false;
+  /** Тихий звуковой элемент для старых iOS без navigator.audioSession. */
+  private silent: HTMLAudioElement | null = null;
 
   constructor() {
     if (typeof window === 'undefined') return;
+    this.ios = isIOS();
     const unlock = (): void => this.unlock();
     for (const ev of ['pointerdown', 'pointerup', 'touchend', 'keydown', 'click'] as const) window.addEventListener(ev, unlock, { passive: true });
     document.addEventListener('visibilitychange', () => {
       const g = this.g;
       if (!g) return;
-      if (document.hidden) void g.ctx.suspend();
+      if (document.hidden) {
+        void g.ctx.suspend();
+        this.silent?.pause();
+      }
       else void g.ctx.resume();
     });
   }
@@ -98,8 +120,10 @@ class AudioEngine {
   setVolumes(music: number, sfx: number): void {
     this.musicVol = music;
     this.sfxVol = sfx;
+    this.applySession();
     const g = this.g;
     if (!g) return;
+    this.syncSilent();
     g.music.gain.setTargetAtTime(this.musicLevel(), g.ctx.currentTime, 0.03);
     g.sfx.gain.setTargetAtTime(this.sfxLevel(), g.ctx.currentTime, 0.03);
   }
@@ -258,6 +282,7 @@ class AudioEngine {
 
   /** Первый жест пользователя: создаём контекст и граф, запускаем ожидающую музыку. */
   private unlock(): void {
+    this.applySession();
     if (!this.g) {
       const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
@@ -282,6 +307,51 @@ class AudioEngine {
     }
     if (this.g.ctx.state !== 'running') void this.g.ctx.resume();
     if (this.mode !== null && this.timer === null) this.startScheduler();
+    this.syncSilent();
+  }
+
+  /** В настройках включены музыка или звуки. */
+  private get audible(): boolean {
+    return this.musicVol > 0 || this.sfxVol > 0;
+  }
+
+  /**
+   * iPhone глушит Web Audio переключателем беззвучного режима. Safari умеет перевести страницу
+   * в режим воспроизведения, как у плеера, и тогда звук есть и при беззвучном режиме. Если звук
+   * в настройках выключен, режим обычный: музыка других приложений не прерывается.
+   */
+  private applySession(): void {
+    const s = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (!s) return;
+    const want = this.audible ? 'playback' : 'ambient';
+    try {
+      if (s.type !== want) s.type = want;
+    } catch {
+      // Тип не поддерживается: остаётся как есть.
+    }
+  }
+
+  /**
+   * Старые iOS без audioSession: зацикленная тишина в обычном звуковом элементе переводит страницу
+   * в режим воспроизведения, и Web Audio перестаёт зависеть от беззвучного режима. Запуск только
+   * по жесту пользователя: из unlock и из настроек громкости.
+   */
+  private syncSilent(): void {
+    if (!this.ios || 'audioSession' in navigator) return;
+    if (!this.audible || document.hidden) {
+      this.silent?.pause();
+      return;
+    }
+    if (!this.silent) {
+      const a = document.createElement('audio');
+      a.src = silentWav();
+      a.loop = true;
+      a.setAttribute('playsinline', '');
+      a.setAttribute('x-webkit-airplay', 'deny');
+      a.disableRemotePlayback = true;
+      this.silent = a;
+    }
+    if (this.silent.paused) this.silent.play().catch(() => {});
   }
 
   private startScheduler(): void {

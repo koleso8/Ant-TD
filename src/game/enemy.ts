@@ -11,6 +11,9 @@ import { t } from './i18n';
 
 export type DamageKind = 'physical' | 'poison' | 'true';
 
+/** Сколько секунд враг проявляется, если на полях экрана его не было видно на подходе. */
+export const FADE_IN = 0.35;
+
 export class Enemy {
   readonly def: EnemyDef;
   hp: number;
@@ -32,6 +35,8 @@ export class Enemy {
   legPhase = Math.random() * TAU;
   bob = Math.random() * TAU;
   hitFlash = 0;
+  /** Остаток проявления, с: только для отрисовки, на симуляцию не влияет. */
+  fadeIn = 0;
   spawnTimer: number;
   /** Босс: сколько секунд его держат; дойдя до `boss.hold`, он делает «Напор». */
   heldTime = 0;
@@ -84,6 +89,7 @@ export class Enemy {
   }
 
   update(dt: number, g: GameCtx): void {
+    if (this.fadeIn > 0) this.fadeIn -= dt;
     if (this.dead) return;
     if (this.slowTimer > 0) this.slowTimer -= dt;
     if (this.poisonTimer > 0) {
@@ -214,6 +220,9 @@ export class Enemy {
   }
 
   draw(ctx: CanvasRenderingContext2D, time: number): void {
+    const alpha = this.fadeIn > 0 ? Math.max(0, 1 - this.fadeIn / FADE_IN) : 1;
+    ctx.save();
+    ctx.globalAlpha = alpha;
     const vy = this.visualY;
     const r = this.def.radius;
     const fly = this.def.flying;
@@ -264,11 +273,11 @@ export class Enemy {
       ctx.stroke();
     }
     if (this.hitFlash > 0) {
-      ctx.globalAlpha = 0.45;
+      ctx.globalAlpha = 0.45 * alpha;
       ctx.fillStyle = '#fff';
       circle(ctx, this.x, vy, r);
       ctx.fill();
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = alpha;
     }
     if (this.hp < this.maxHp) drawHealthBar(ctx, this.x, vy - r - 16, Math.max(26, r * 2), this.hp / this.maxHp);
     const boss = this.def.boss;
@@ -286,5 +295,6 @@ export class Enemy {
       ctx.arc(cx, cy, 6, -Math.PI / 2, -Math.PI / 2 + TAU * Math.min(1, this.heldTime / boss.hold));
       ctx.stroke();
     }
+    ctx.restore();
   }
 }

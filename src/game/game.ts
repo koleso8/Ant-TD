@@ -1,4 +1,4 @@
-import type { Screen } from '../engine/canvas';
+import { MAX_EXTRA_X, type Screen, type ViewRect } from '../engine/canvas';
 import type { Input } from '../engine/input';
 import { Rng } from '../engine/rng';
 import { dist, roundRect, type Vec } from '../engine/math';
@@ -13,8 +13,9 @@ import { UI } from './ui';
 import { PAL } from '../render/palette';
 import { drawText } from '../render/text';
 import {
-  ANT_WORKER, circle, drawAnt, drawHammer, drawHardHat, drawLadder, drawRange, drawShadow, drawSporeCloud, drawTerrain, ell, pennant, twig,
+  ANT_WORKER, circle, drawAnt, drawHammer, drawHardHat, drawLadder, drawRange, drawShadow, drawSporeCloud, drawTerrain, ell, leadRoom, pathLead, pennant, twig,
 } from '../render/art';
+import { Enemy } from './enemy';
 import type { Builder, Construction } from './construction';
 import { installSprites } from '../render/sprites';
 import { drawSplash, drawSplashSign } from '../render/splash';
@@ -30,6 +31,11 @@ export type Selection =
   | null;
 
 interface Ambient { cx: number; cy: number; rx: number; ry: number; speed: number; phase: number }
+
+/** Одна и та же видимая область: иначе фон и заставку надо перепечь. */
+function sameView(a: ViewRect, b: ViewRect): boolean {
+  return a.x0 === b.x0 && a.y0 === b.y0 && a.x1 === b.x1 && a.y1 === b.y1;
+}
 
 /** Клавиши заклинаний на ПК: латиница и та же кнопка в русской раскладке. */
 const SPELL_KEYS: readonly (readonly string[])[] = [['q', 'Q', 'й', 'Й'], ['w', 'W', 'ц', 'Ц'], ['e', 'E', 'у', 'У']];
@@ -61,10 +67,14 @@ export class Game {
   resetArmed = false;
   /** Откуда открыли настройки: туда и вернёмся. */
   settingsFrom: GameState = 'title';
+  /** Подсказка, как поставить игру на главный экран (iPhone и iPad). */
+  installHelp = false;
 
-  private bg: { canvas: HTMLCanvasElement; k: number } | null = null;
+  private bg: { canvas: HTMLCanvasElement; k: number; view: ViewRect } | null = null;
   /** Заставка главного меню, печётся один раз; перепекается, когда догрузится картина. */
-  private splash: { canvas: HTMLCanvasElement; k: number } | null = null;
+  private splash: { canvas: HTMLCanvasElement; k: number; view: ViewRect; ready: boolean } | null = null;
+  /** Образцы врагов для отрисовки на подходе: по одному на вид, двигаются только при рисовании. */
+  private readonly ghosts = new Map<EnemyKind, Enemy>();
   private readonly splashImg = new Image();
   private ambient: Ambient[] = [];
   /** Светлячки ночных уровней. */
@@ -146,6 +156,11 @@ export class Game {
       for (let k = 0; k < 18; k++) {
         this.fireflies.push({ x: rng.range(40, LOGICAL_W - 40), y: rng.range(100, LOGICAL_H - 60), r: rng.range(18, 40), speed: rng.range(0.4, 0.9), phase: rng.range(0, 6.28) });
       }
+      // Светлячки и на полях широкого экрана: за краем кадра их просто не видно.
+      for (let k = 0; k < 8; k++) {
+        const x = k % 2 === 0 ? rng.range(20 - MAX_EXTRA_X, -20) : rng.range(LOGICAL_W + 20, LOGICAL_W + MAX_EXTRA_X - 20);
+        this.fireflies.push({ x, y: rng.range(100, LOGICAL_H - 60), r: rng.range(18, 40), speed: rng.range(0.4, 0.9), phase: rng.range(0, 6.28) });
+      }
     }
     this.resetView();
   }
@@ -189,6 +204,14 @@ export class Game {
 
   closeSettings(): void {
     if (this.state === 'settings') this.state = this.settingsFrom;
+  }
+
+  showInstallHelp(): void {
+    this.installHelp = true;
+  }
+
+  closeInstallHelp(): void {
+    this.installHelp = false;
   }
 
   setLang(l: Lang): void {
@@ -307,7 +330,8 @@ export class Game {
     this.world.targetMode = next.id;
     this.progress.targetMode = next.id;
     saveProgress(this.progress);
-    this.effects.text(t('fx.target', targetText(next.id).name.toLowerCase()), 975, 618, PAL.uiGold, 18);
+    const o = this.ui.hud();
+    this.effects.text(t('fx.target', targetText(next.id).name.toLowerCase()), 975 + o.r, 618 + o.b, PAL.uiGold, 18);
   }
 
   sellTower(t: Tower): void {
@@ -335,7 +359,8 @@ export class Game {
       return;
     }
     if (!this.world.spells.ready(i)) {
-      this.effects.text(t('fx.cooldown', Math.ceil(this.world.spells.cooldowns[i])), 164, 596, PAL.uiRed, 18);
+      const o = this.ui.hud();
+      this.effects.text(t('fx.cooldown', Math.ceil(this.world.spells.cooldowns[i])), 164 + o.l, 596 + o.b, PAL.uiRed, 18);
       return;
     }
     this.armedSpell = i;
@@ -358,7 +383,7 @@ export class Game {
     this.pendingSpec = null;
     if (this.armedSpell !== null) {
       // Цель заклинания: любая точка поля ниже верхней панели.
-      if (p.y > 84 && this.world.castSpell(this.armedSpell, { x: p.x, y: p.y })) this.armedSpell = null;
+      if (p.y > this.ui.hud().t + 84 && this.world.castSpell(this.armedSpell, { x: p.x, y: p.y })) this.armedSpell = null;
       return;
     }
     const plot = this.world.plotAt(p.x, p.y);
@@ -378,6 +403,10 @@ export class Game {
   }
 
   private onKey(k: string): void {
+    if (this.installHelp) {
+      if (k === 'Escape' || k === ' ' || k === 'Enter') this.closeInstallHelp();
+      return;
+    }
     if (k === ' ') {
       switch (this.state) {
         case 'title': this.toLevels(); break;
@@ -393,6 +422,7 @@ export class Game {
       else if (this.state === 'intro' || this.state === 'won' || this.state === 'lost' || this.state === 'perks') this.toLevels();
       return;
     }
+    if (import.meta.env.DEV && (this.state === 'title' || this.state === 'settings') && (k === 'i' || k === 'I')) { this.showInstallHelp(); return; }
     if (import.meta.env.DEV && this.state === 'title' && (k === 's' || k === 'S')) { this.saveSplash(); return; }
     if (this.state !== 'playing') return;
     if (k === 'n' || k === 'N' || k === 'т' || k === 'Т' || k === 'Enter') { this.callWave(); return; }
@@ -455,6 +485,7 @@ export class Game {
       return;
     }
     this.drawBackground(ctx);
+    this.drawIncoming(ctx);
 
     if (this.state === 'playing') this.drawGrid(ctx);
 
@@ -476,7 +507,7 @@ export class Game {
       // Прицел заклинания: на ПК следует за курсором, на телефоне игрок просто тапает по точке.
       const def = SPELLS[this.armedSpell];
       const hv = this.input.hover;
-      if (hv && hv.y > 84) {
+      if (hv && hv.y > this.ui.hud().t + 84) {
         drawRange(ctx, hv.x, hv.y, def.radius, def.id === 'acid' ? '155,229,58' : def.id === 'spores' ? '181,123,214' : '255,217,90');
       }
     }
@@ -512,7 +543,7 @@ export class Game {
 
     if (this.hurtFlash > 0) {
       ctx.fillStyle = `rgba(200,30,20,${Math.min(0.45, this.hurtFlash * 0.6)})`;
-      ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+      this.fillView(ctx);
     }
 
     this.ui.draw(ctx);
@@ -585,25 +616,79 @@ export class Game {
 
   private drawSplash(ctx: CanvasRenderingContext2D): void {
     const k = Math.min(this.screen.pixelScale, 2.5);
-    if (!this.splash || Math.abs(this.splash.k - k) > 0.12) {
+    const v = this.screen.view;
+    const img = this.splashImg;
+    const ready = img.complete && img.naturalWidth > 0;
+    const sp = this.splash;
+    if (!sp || Math.abs(sp.k - k) > 0.12 || !sameView(sp.view, v) || sp.ready !== ready) {
       const c = document.createElement('canvas');
-      c.width = Math.ceil(LOGICAL_W * k);
-      c.height = Math.ceil(LOGICAL_H * k);
+      c.width = Math.ceil((v.x1 - v.x0) * k);
+      c.height = Math.ceil((v.y1 - v.y0) * k);
       const sctx = c.getContext('2d');
       if (!sctx) return;
       sctx.scale(k, k);
-      const img = this.splashImg;
-      if (img.complete && img.naturalWidth > 0) {
-        // Картина вписывается с обрезкой по краям, табличка под заголовок поверх.
-        const s = Math.max(LOGICAL_W / img.naturalWidth, LOGICAL_H / img.naturalHeight);
-        sctx.drawImage(img, (LOGICAL_W - img.naturalWidth * s) / 2, (LOGICAL_H - img.naturalHeight * s) / 2, img.naturalWidth * s, img.naturalHeight * s);
+      sctx.translate(-v.x0, -v.y0);
+      if (ready) {
+        this.paintSplash(sctx, img, v, k);
         drawSplashSign(sctx);
       } else {
         drawSplash(sctx, LOGICAL_W, LOGICAL_H, new Rng(2026));
       }
-      this.splash = { canvas: c, k };
+      this.splash = { canvas: c, k, view: { ...v }, ready };
     }
-    ctx.drawImage(this.splash.canvas, 0, 0, LOGICAL_W, LOGICAL_H);
+    const s = this.splash;
+    if (s) ctx.drawImage(s.canvas, s.view.x0, s.view.y0, s.view.x1 - s.view.x0, s.view.y1 - s.view.y0);
+  }
+
+  /**
+   * Картина заставки на всю видимую область, по ширине экрана. Если экран шире картины, лишнее
+   * сверху и снизу обрезается; если выше, сверху и снизу её размытое продолжение.
+   */
+  private paintSplash(c: CanvasRenderingContext2D, img: HTMLImageElement, v: ViewRect, k: number): void {
+    const vw = v.x1 - v.x0;
+    const vh = v.y1 - v.y0;
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    const pw = vw;
+    const ph = (ih * vw) / iw;
+    const x = v.x0;
+    const y = (v.y0 + v.y1) / 2 - ph / 2;
+    if (ph >= vh) {
+      c.drawImage(img, x, y, pw, ph);
+      return;
+    }
+    // Размытый фон: картина, ужатая до горстки пикселей и растянутая обратно на весь экран.
+    const tiny = document.createElement('canvas');
+    tiny.width = 40;
+    tiny.height = Math.max(4, Math.round((40 * vh) / vw));
+    const tctx = tiny.getContext('2d');
+    if (tctx) {
+      const ts = Math.max(tiny.width / iw, tiny.height / ih);
+      tctx.drawImage(img, (tiny.width - iw * ts) / 2, (tiny.height - ih * ts) / 2, iw * ts, ih * ts);
+      c.drawImage(tiny, v.x0, v.y0, vw, vh);
+      c.fillStyle = 'rgba(20,12,4,0.25)';
+      c.fillRect(v.x0, v.y0, vw, vh);
+    }
+    // Резкая картина, верхний и нижний края мягко растворяются в размытом фоне.
+    const sharp = document.createElement('canvas');
+    sharp.width = Math.ceil(pw * k);
+    sharp.height = Math.ceil(ph * k);
+    const m = sharp.getContext('2d');
+    if (!m) {
+      c.drawImage(img, x, y, pw, ph);
+      return;
+    }
+    m.drawImage(img, 0, 0, sharp.width, sharp.height);
+    m.globalCompositeOperation = 'destination-in';
+    const f = Math.min(0.2, 48 / ph);
+    const grad = m.createLinearGradient(0, 0, 0, sharp.height);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(f, 'rgba(0,0,0,1)');
+    grad.addColorStop(1 - f, 'rgba(0,0,0,1)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    m.fillStyle = grad;
+    m.fillRect(0, 0, sharp.width, sharp.height);
+    c.drawImage(sharp, x, y, pw, ph);
   }
 
   /** Дев: заставка с заголовком в полном размере уходит в пекарню как splash.png для показа. */
@@ -624,17 +709,24 @@ export class Game {
 
   private drawBackground(ctx: CanvasRenderingContext2D): void {
     const k = Math.min(this.screen.pixelScale, 2.5);
-    if (!this.bg || Math.abs(this.bg.k - k) > 0.12) this.bake(k);
-    if (this.bg) ctx.drawImage(this.bg.canvas, 0, 0, LOGICAL_W, LOGICAL_H);
+    const v = this.screen.view;
+    if (!this.bg || Math.abs(this.bg.k - k) > 0.12 || !sameView(this.bg.view, v)) this.bake(k, v);
+    const b = this.bg;
+    if (b) ctx.drawImage(b.canvas, b.view.x0, b.view.y0, b.view.x1 - b.view.x0, b.view.y1 - b.view.y0);
   }
 
-  private bake(k: number): void {
+  /** Фон уровня печётся под видимую область: кадр плюс поля широкого или высокого экрана. */
+  private bake(k: number, v: ViewRect): void {
+    const vw = v.x1 - v.x0;
+    const vh = v.y1 - v.y0;
     const c = document.createElement('canvas');
-    c.width = Math.ceil(LOGICAL_W * k);
-    c.height = Math.ceil(LOGICAL_H * k);
+    c.width = Math.ceil(vw * k);
+    c.height = Math.ceil(vh * k);
     const bctx = c.getContext('2d');
     if (!bctx) return;
     bctx.scale(k, k);
+    bctx.translate(-v.x0, -v.y0);
+    const o = this.ui.hud();
     drawTerrain(bctx, {
       w: LOGICAL_W,
       h: LOGICAL_H,
@@ -642,20 +734,61 @@ export class Game {
       plots: this.plots,
       anthill: this.level.anthill,
       rng: new Rng(this.level.seed),
+      marginRng: new Rng(this.level.seed + 7),
+      view: v,
       theme: this.level.theme,
+      // Под интерфейсом декор не нужен; угловые блоки прижаты к краям экрана.
       reserved: [
-        { x: 0, y: 0, w: LOGICAL_W, h: 84 },
-        { x: 930, y: 615, w: 350, h: 105 },
-        { x: 0, y: 610, w: 365, h: 110 },
+        { x: v.x0, y: v.y0, w: vw, h: o.t + 84 - v.y0 },
+        { x: 930 + o.r, y: 615 + o.b, w: v.x1 - 930 - o.r, h: v.y1 - 615 - o.b },
+        { x: v.x0, y: 610 + o.b, w: 365 + o.l - v.x0, h: v.y1 - 610 - o.b },
       ],
     });
-    this.bg = { canvas: c, k };
+    this.bg = { canvas: c, k, view: { ...v } };
+  }
+
+  /** Залить всю видимую область, вместе с полями. */
+  private fillView(ctx: CanvasRenderingContext2D): void {
+    const v = this.screen.view;
+    ctx.fillRect(v.x0, v.y0, v.x1 - v.x0, v.y1 - v.y0);
+  }
+
+  /**
+   * Враги волны, которые ещё не вышли на карту: на полях широкого экрана они уже идут по
+   * продолжению тропы и выходят на карту ровно там и тогда, где их создаст симуляция.
+   */
+  private drawIncoming(ctx: CanvasRenderingContext2D): void {
+    const v = this.screen.view;
+    const paths = this.world.paths;
+    for (const s of this.world.waves.queue) {
+      const path = paths[s.path] ?? paths[0];
+      const lead = pathLead(path, LOGICAL_W, LOGICAL_H);
+      if (!lead) continue;
+      const room = leadRoom(lead, v);
+      if (room <= 0) continue;
+      let ghost = this.ghosts.get(s.kind);
+      if (!ghost) {
+        ghost = new Enemy(s.kind, 1, path);
+        this.ghosts.set(s.kind, ghost);
+      }
+      ghost.angle = Math.atan2(lead.dy, lead.dx);
+      const speed = ENEMIES[s.kind].speed;
+      for (let i = 0; i < s.left; i++) {
+        const d = speed * (s.timer + i * s.interval);
+        if (d <= 0) continue;
+        if (d > room + 50) break;
+        ghost.x = lead.x - lead.dx * d;
+        ghost.y = lead.y - lead.dy * d;
+        ghost.legPhase = -d * 0.14;
+        ghost.draw(ctx, this.clock);
+      }
+    }
   }
 
   /** Ночь: лёгкая синяя дымка поверх сцены и светлячки. */
   private drawNight(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = 'rgba(15,25,70,0.14)';
-    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+    this.fillView(ctx);
     for (const f of this.fireflies) {
       const t = this.clock * f.speed + f.phase;
       const px = f.x + Math.sin(t) * f.r;

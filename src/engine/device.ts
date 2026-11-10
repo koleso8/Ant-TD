@@ -8,7 +8,13 @@ type FsDocument = Document & { webkitFullscreenElement?: Element | null; webkitE
 type LockableOrientation = ScreenOrientation & { lock?: (o: 'landscape') => Promise<void> };
 interface InstallPromptEvent extends Event { prompt(): Promise<void> }
 
+/** Dev-превью iPhone: ?iphone в адресе притворяется Safari на iPhone (только в npm run dev). */
+function devIPhone(): boolean {
+  return import.meta.env.DEV && new URLSearchParams(location.search).has('iphone');
+}
+
 export function fullscreenSupported(): boolean {
+  if (devIPhone()) return false;
   const el = document.documentElement as FsElement;
   return typeof el.requestFullscreen === 'function' || typeof el.webkitRequestFullscreen === 'function';
 }
@@ -23,6 +29,17 @@ export function isInstalledApp(): boolean {
   return matchMedia('(display-mode: fullscreen)').matches
     || matchMedia('(display-mode: standalone)').matches
     || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
+/** iPhone, iPod или iPad: iPadOS представляется Mac, но с сенсорным экраном. */
+export function isIOS(): boolean {
+  if (devIPhone()) return true;
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/** На iPhone и iPad браузер не умеет предлагать установку: значок ставят вручную через «Поделиться». */
+export function manualInstall(): boolean {
+  return isIOS() && !isInstalledApp();
 }
 
 /** Основной указатель палец: телефон или планшет. */

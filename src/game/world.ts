@@ -187,9 +187,11 @@ export class World implements GameCtx {
     if (this.lives <= 0) this.state = 'lost';
   }
 
-  spawnEnemy(kind: EnemyKind, hpMul: number, pathIndex: number): void {
+  spawnEnemy(kind: EnemyKind, hpMul: number, pathIndex: number): Enemy {
     const path = this.paths[pathIndex] ?? this.paths[0];
-    this.enemies.push(new Enemy(kind, hpMul * this.difficulty.hpMul, path));
+    const e = new Enemy(kind, hpMul * this.difficulty.hpMul, path);
+    this.enemies.push(e);
+    return e;
   }
 
   spawnEnemyAt(kind: EnemyKind, hpMul: number, path: Path, progress: number): void {
