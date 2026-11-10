@@ -1,6 +1,6 @@
 /** Отладка одного уровня: клетки, постройки робота и утечки. Запуск: npx tsx sim/debug.ts 4 */
 import { Rng } from '../src/engine/rng';
-import { LEVELS } from '../src/game/levels';
+import { LEVELS } from '../src/game/campaign';
 import { World } from '../src/game/world';
 import { GreedyPolicy } from './policy';
 

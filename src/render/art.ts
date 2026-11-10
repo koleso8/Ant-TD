@@ -4,11 +4,12 @@
  * Когда появятся нарисованные вручную спрайты, они заменяются здесь по одной.
  */
 import { TAU, type Vec } from '../engine/math';
-import type { Rng } from '../engine/rng';
+import { Rng } from '../engine/rng';
 import type { Path } from '../game/path';
 import { CELL, type TowerKind } from '../game/config';
-import type { LevelTheme } from '../game/levels';
+import type { Biome, LevelTheme } from '../game/levels';
 import { PAL } from './palette';
+import { biomeBlob, biomeCluster, biomeDecor, biomeGround, biomeTuft, crossings, drawIce, drawRavine, koiStream, redBridge, ropeBridge } from './biomes';
 
 type Ctx = CanvasRenderingContext2D;
 type Fill = string | CanvasGradient;
@@ -638,8 +639,165 @@ export function drawMound(ctx: Ctx, x: number, y: number, r: number): void {
   ctx.fill();
 }
 
+/**
+ * Стиль построек по ландшафту акта: в Азии бамбук, в горах камень и т.п. Пока готов эталон —
+ * бамбуковые стрелки; остальные башни и стили рисуются по-прежнему, пока эталон не утверждён.
+ */
+let towerStyle: Biome | null = null;
+export function setTowerStyle(style: Biome | null): void {
+  towerStyle = style;
+}
+
+/** Соломенная шляпа-каса на голове муравья (вид сверху): круг с лучами плетения. */
+function kasa(ctx: Ctx, x: number, y: number, r: number): void {
+  drawShadow(ctx, x + 1.5, y + 2, r, r * 0.8, 0.22);
+  outline(ctx, 1.8);
+  circle(ctx, x, y, r);
+  fs(ctx, '#e3bf72');
+  ctx.strokeStyle = 'rgba(150,105,40,0.7)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TAU;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(a) * r * 0.2, y + Math.sin(a) * r * 0.2);
+    ctx.lineTo(x + Math.cos(a) * r * 0.92, y + Math.sin(a) * r * 0.92);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#c99a4a';
+  circle(ctx, x, y, r * 0.22);
+  ctx.fill();
+}
+
+/** Бумажный фонарь: красный шар с золотыми крышками и тёплым светом. */
+function paperLantern(ctx: Ctx, x: number, y: number): void {
+  const g = ctx.createRadialGradient(x, y, 1, x, y, 16);
+  g.addColorStop(0, 'rgba(255,200,90,0.5)');
+  g.addColorStop(1, 'rgba(255,200,90,0)');
+  ctx.fillStyle = g;
+  circle(ctx, x, y, 16);
+  ctx.fill();
+  outline(ctx, 2);
+  ell(ctx, x, y, 6.5, 8);
+  fs(ctx, '#d8452f');
+  ctx.strokeStyle = 'rgba(120,30,10,0.5)';
+  ctx.lineWidth = 1;
+  for (const k of [-0.5, 0, 0.5]) { ell(ctx, x, y, 6.5 * Math.cos(k), 8); ctx.stroke(); }
+  outline(ctx, 1.6);
+  ctx.beginPath(); ctx.rect(x - 3.5, y - 10, 7, 3); fs(ctx, '#f2c94c');
+  ctx.beginPath(); ctx.rect(x - 3.5, y + 7, 7, 3); fs(ctx, '#f2c94c');
+}
+
+/**
+ * Бамбуковые стрелки (Азия): связка стеблей бамбука на каменном основании, плетёный настил,
+ * на нём муравьи в соломенных шляпах. 2-й уровень — красное знамя-нобори, 3-й — бумажный фонарь.
+ * Специализации: снайперы — высокий шест с вымпелом, залп — широкий настил и четверо стрелков.
+ */
+function drawTowerAcidBamboo(ctx: Ctx, x: number, y: number, level: number, angle: number, recoil: number, variant: number): void {
+  drawShadow(ctx, x, y + 10, 38, 14);
+  const lv = Math.min(level, 3);
+  const h = 32 + lv * 8 + (level >= 4 ? 6 : 0);
+  const rw = 17 + lv + (variant === 2 ? 6 : 0);
+  const top = y - h;
+  // Каменное основание.
+  outline(ctx, 2.5);
+  ell(ctx, x, y + 2, rw + 12, 11);
+  fs(ctx, '#9d998f');
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ell(ctx, x - 8, y - 1, rw * 0.6, 4);
+  ctx.fill();
+  // Стебли: задний ряд выше, у каждого узлы.
+  const n = 5 + Math.min(lv - 1, 2) + (variant === 2 ? 1 : 0);
+  const stalk = (sx: number, sTop: number, col: string): void => {
+    outline(ctx, 2.2);
+    ctx.beginPath();
+    ctx.rect(sx - 3.6, sTop, 7.2, y - sTop);
+    fs(ctx, col);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.fillRect(sx - 2.4, sTop + 2, 1.6, y - sTop - 4);
+    ctx.strokeStyle = '#4f7a24';
+    ctx.lineWidth = 1.6;
+    for (let ny = y - 10; ny > sTop + 4; ny -= 12) {
+      ctx.beginPath(); ctx.moveTo(sx - 3.6, ny); ctx.lineTo(sx + 3.6, ny); ctx.stroke();
+    }
+    outline(ctx, 1.6);
+    ell(ctx, sx, sTop, 3.6, 1.6);
+    fs(ctx, '#e9e2b8');
+  };
+  for (let i = 0; i < n; i++) {
+    const sx = x - rw + 3 + (i * (2 * rw - 6)) / (n - 1);
+    stalk(sx, top - (i % 2 ? 0 : 5), i % 2 ? '#8fbf4a' : '#a3cd58');
+  }
+  // Верёвочные обвязки.
+  for (const k of [0.3, 0.68]) {
+    const by = y - h * k;
+    outline(ctx, 2);
+    ctx.beginPath();
+    ctx.rect(x - rw - 1, by - 2.5, 2 * rw + 2, 5);
+    fs(ctx, '#d8c08a');
+    ctx.strokeStyle = 'rgba(120,90,40,0.6)';
+    ctx.lineWidth = 1;
+    for (let rx = x - rw; rx < x + rw; rx += 5) { ctx.beginPath(); ctx.moveTo(rx, by - 2.5); ctx.lineTo(rx + 3, by + 2.5); ctx.stroke(); }
+  }
+  // Плетёный настил наверху.
+  outline(ctx, 2.5);
+  ell(ctx, x, top, rw + 6, 8.5);
+  fs(ctx, '#d9b98a');
+  ctx.save();
+  ell(ctx, x, top, rw + 6, 8.5);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(140,100,50,0.55)';
+  ctx.lineWidth = 1.2;
+  for (let k = -rw - 6; k < rw + 6; k += 5) {
+    ctx.beginPath(); ctx.moveTo(x + k, top - 9); ctx.lineTo(x + k + 8, top + 9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + k + 8, top - 9); ctx.lineTo(x + k, top + 9); ctx.stroke();
+  }
+  ctx.restore();
+  // 2-й уровень: красное знамя на бамбуковом шесте справа.
+  if (level >= 2 && variant !== 1) {
+    const px = x + rw + 6;
+    twig(ctx, px, y - 4, px, top - 34, 3);
+    outline(ctx, 2);
+    ctx.beginPath(); ctx.rect(px - 13, top - 32, 11, 26); fs(ctx, '#c8452f');
+    circle(ctx, px - 7.5, top - 21, 3.2);
+    fs(ctx, '#f2c94c');
+  }
+  // 3-й уровень: бумажный фонарь на изогнутом шесте слева.
+  if (level >= 3 && variant !== 1) {
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(x - rw + 2, top + 6); ctx.quadraticCurveTo(x - rw - 10, top - 18, x - rw - 16, top - 14); ctx.stroke();
+    ctx.strokeStyle = '#8fbf4a';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    paperLantern(ctx, x - rw - 16, top - 2);
+  }
+  // Снайперы: высокий шест с вымпелом за стрелком.
+  if (variant === 1) {
+    twig(ctx, x + 6, top + 2, x + 6, top - 46, 3);
+    pennant(ctx, x + 6, top - 46, 24, 13, '#c8452f');
+    paperLantern(ctx, x - rw - 6, top + 10);
+  }
+  const offs: ReadonlyArray<readonly [number, number]> =
+    variant === 1 ? [[0, -1]]
+      : variant === 2 ? [[-14, -3], [-5, 0], [5, 0], [14, -3]]
+        : level === 1 ? [[0, -1]] : level === 2 ? [[-7, 0], [7, -2]] : [[-9, -2], [0, 1], [9, -3]];
+  const as = variant === 1 ? 0.78 : 0.6;
+  const rx = Math.cos(angle) * recoil * 3;
+  const ry = Math.sin(angle) * recoil * 3;
+  for (const [ox, oy] of offs) {
+    const ax = x + ox - rx;
+    const ay = top + oy - ry;
+    drawAnt(ctx, ax, ay, angle, as, ANT_WORKER, 0, false);
+    kasa(ctx, ax + Math.cos(angle) * 14 * as, ay + Math.sin(angle) * 14 * as, 8.5 * as / 0.6);
+  }
+}
+
 /** Стрелки: пень-башня, на срезе стоят муравьи-плевальщики. */
 export function drawTowerAcid(ctx: Ctx, x: number, y: number, level: number, angle: number, recoil: number, variant = 0): void {
+  if (towerStyle === 'asia') {
+    drawTowerAcidBamboo(ctx, x, y, level, angle, recoil, variant);
+    return;
+  }
   drawShadow(ctx, x, y + 10, 36, 14);
   drawMound(ctx, x, y, 32);
   const h = 30 + Math.min(level, 3) * 7 + (level >= 4 ? 4 : 0);
@@ -797,7 +955,7 @@ export function drawTowerCatapult(ctx: Ctx, x: number, y: number, level: number,
   ctx.restore();
 }
 
-function mushroom(ctx: Ctx, cx: number, cy: number, r: number, seed: number, cap: string = PAL.mushroomCap, dot = '#fff3e6'): void {
+export function mushroom(ctx: Ctx, cx: number, cy: number, r: number, seed: number, cap: string = PAL.mushroomCap, dot = '#fff3e6'): void {
   outline(ctx, 2.6);
   ctx.beginPath();
   ctx.moveTo(cx - r * 0.38, cy - r * 0.2);
@@ -921,7 +1079,7 @@ export function drawAnthill(ctx: Ctx, x: number, y: number, rng: Rng): void {
 
 // ───────────────────────── декор и террейн ─────────────────────────
 
-function grassTuft(ctx: Ctx, x: number, y: number, rng: Rng, dark: string = PAL.grassDark, light: string = PAL.grassLight): void {
+export function grassTuft(ctx: Ctx, x: number, y: number, rng: Rng, dark: string = PAL.grassDark, light: string = PAL.grassLight): void {
   ctx.strokeStyle = rng.next() < 0.5 ? dark : light;
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
@@ -929,7 +1087,7 @@ function grassTuft(ctx: Ctx, x: number, y: number, rng: Rng, dark: string = PAL.
   ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 0.5, y - 12); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 5, y - 8); ctx.stroke();
 }
-function flower(ctx: Ctx, x: number, y: number, color: string): void {
+export function flower(ctx: Ctx, x: number, y: number, color: string): void {
   ctx.strokeStyle = PAL.grassDark;
   ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 2, y + 12); ctx.stroke();
@@ -1012,7 +1170,7 @@ function segDist(px: number, py: number, ax: number, ay: number, bx: number, by:
   return Math.hypot(px - (ax + vx * k), py - (ay + vy * k));
 }
 
-function hexA(hex: string, a: number): string {
+export function hexA(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
@@ -1026,7 +1184,7 @@ function tint(hex: string, k: number): string {
   return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
 }
 
-function puddle(ctx: Ctx, x: number, y: number, rng: Rng): void {
+export function puddle(ctx: Ctx, x: number, y: number, rng: Rng): void {
   const rx = rng.range(14, 26);
   const ry = rx * rng.range(0.45, 0.65);
   ctx.fillStyle = 'rgba(60,110,160,0.35)';
@@ -1153,8 +1311,11 @@ function drawWater(ctx: Ctx, w: number, band: { y: number; h: number }, rng: Rng
 
 /** Бревно-мост там, где тропа пересекает воду. */
 function drawBridge(ctx: Ctx, path: Path, band: { y: number; h: number }): void {
-  const pts = path.pts.filter((p) => p.y >= band.y - 24 && p.y <= band.y + band.h + 24);
-  if (pts.length < 2) return;
+  for (const pts of crossings(path, band, 14)) logSpan(ctx, pts);
+}
+
+/** Бревно-мост на одной переправе. */
+function logSpan(ctx: Ctx, pts: Vec[]): void {
   ctx.lineCap = 'butt';
   ctx.lineJoin = 'round';
   const stroke = (wd: number, col: string) => {
@@ -1288,20 +1449,88 @@ function drawCaveWalls(ctx: Ctx, w: number, h: number, rng: Rng, v: ViewBox, mr:
 }
 
 /** Павший дуб: ствол вдоль верхнего края и корни, уходящие в землю. */
-function drawOak(ctx: Ctx, w: number, rng: Rng, v: ViewBox, mr: Rng): void {
-  const root = (r: Rng, x0: number): void => {
-    const len = r.range(120, 260);
-    const bend = r.range(-90, 90);
-    const layers: ReadonlyArray<readonly [number, string]> = [[22, OUT], [16, '#5a3a1f'], [6, 'rgba(255,255,255,0.08)']];
-    for (const [wd, col] of layers) {
-      ctx.strokeStyle = col;
-      ctx.lineWidth = wd;
-      ctx.lineCap = 'round';
+/** Павший дуб; возвращает точки корней, чтобы декор и трава на них не ложились. */
+function drawOak(ctx: Ctx, w: number, rng: Rng, v: ViewBox, mr: Rng): Vec[] {
+  const roots: Vec[] = [];
+  /** Корень: кривая с изгибом, толстая у ствола и тонкая к кончику, с корешками по бокам и тенью на земле. */
+  const limb = (r: Rng, x0: number, y0: number, ang: number, len: number, w0: number, depth: number): void => {
+    const n = 16;
+    const curl = r.range(-0.9, 0.9);
+    const wob = r.range(0, TAU);
+    const pts: Vec[] = [];
+    let x = x0;
+    let y = y0;
+    let a = ang;
+    for (let k = 0; k <= n; k++) {
+      pts.push({ x, y });
+      a += (curl / n) + Math.sin(k * 0.9 + wob) * 0.07;
+      x += Math.cos(a) * (len / n);
+      y += Math.sin(a) * (len / n);
+    }
+    const wAt = (k: number): number => w0 * (1 - (k / n) * 0.8);
+    // Боковые корешки рисуются раньше, чтобы их основание пряталось под родительский корень.
+    for (const p of pts) roots.push(p);
+    if (depth > 0) {
+      const branches = r.int(1, 3);
+      for (let b = 0; b < branches; b++) {
+        const k = r.int(5, n - 3);
+        const p = pts[k];
+        const t = Math.atan2(pts[k + 1].y - pts[k - 1].y, pts[k + 1].x - pts[k - 1].x);
+        limb(r, p.x, p.y, t + r.pick([-1, 1]) * r.range(0.5, 1), len * r.range(0.28, 0.45), wAt(k) * 0.55, depth - 1);
+      }
+    }
+    const outlineOf = (dx: number, dy: number, grow: number): void => {
+      const left: Vec[] = [];
+      const right: Vec[] = [];
+      pts.forEach((p, k) => {
+        const q = pts[Math.min(k + 1, n)];
+        const o = pts[Math.max(k - 1, 0)];
+        const t = Math.atan2(q.y - o.y, q.x - o.x);
+        const hw = wAt(k) / 2 + grow;
+        left.push({ x: p.x + dx - Math.sin(t) * hw, y: p.y + dy + Math.cos(t) * hw });
+        right.push({ x: p.x + dx + Math.sin(t) * hw, y: p.y + dy - Math.cos(t) * hw });
+      });
       ctx.beginPath();
-      ctx.moveTo(x0, 60);
-      ctx.quadraticCurveTo(x0 + bend * 0.5, 60 + len * 0.6, x0 + bend, 60 + len);
+      left.forEach((p, k) => (k === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      for (let k = right.length - 1; k >= 0; k--) ctx.lineTo(right[k].x, right[k].y);
+      ctx.closePath();
+    };
+    outlineOf(5, 7, 0);
+    ctx.fillStyle = 'rgba(30,20,5,0.22)';
+    ctx.fill();
+    outlineOf(0, 0, 2.5);
+    ctx.fillStyle = OUT;
+    ctx.fill();
+    outlineOf(0, 0, 0);
+    const g = ctx.createLinearGradient(x0 - w0, y0, x0 + w0, y0);
+    g.addColorStop(0, '#6e4826');
+    g.addColorStop(1, '#4e321a');
+    ctx.fillStyle = g;
+    ctx.fill();
+    // Кора: светлая полоса сверху и тёмные волокна вдоль корня.
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255,230,190,0.16)';
+    ctx.lineWidth = Math.max(1.5, w0 * 0.22);
+    ctx.beginPath();
+    pts.slice(0, n - 3).forEach((p, k) => (k === 0 ? ctx.moveTo(p.x - w0 * 0.15, p.y) : ctx.lineTo(p.x - wAt(k) * 0.15, p.y)));
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+    ctx.lineWidth = 1.4;
+    for (let s = -1; s <= 1; s += 2) {
+      const from = r.int(1, 5);
+      const to = from + r.int(4, 8);
+      ctx.beginPath();
+      for (let k = from; k <= Math.min(to, n - 2); k++) {
+        const p = pts[k];
+        const off = s * wAt(k) * 0.22;
+        if (k === from) ctx.moveTo(p.x + off, p.y); else ctx.lineTo(p.x + off, p.y);
+      }
       ctx.stroke();
     }
+  };
+  const root = (r: Rng, x0: number): void => {
+    const len = r.range(130, 270);
+    limb(r, x0, 50, Math.PI / 2 + r.range(-0.45, 0.45), len, r.range(26, 34), 1);
   };
   for (let i = 0; i < 6; i++) root(rng, 80 + i * 220 + rng.range(-40, 40));
   for (let x = -140; x > v.x0 - 60; x -= 220) root(mr, x + mr.range(-40, 40));
@@ -1349,6 +1578,7 @@ function drawOak(ctx: Ctx, w: number, rng: Rng, v: ViewBox, mr: Rng): void {
       ctx.stroke();
     }
   }
+  return roots;
 }
 
 /** Статичный фон: рисуется один раз в offscreen-канвас. */
@@ -1375,29 +1605,83 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
     return null;
   };
 
+  // ── земля: основной цвет, мягкие пятна светлее и темнее, мелкая фактура травинок ──
   ctx.fillStyle = theme.grass;
   ctx.fillRect(v.x0, v.y0, v.x1 - v.x0, v.y1 - v.y0);
-  for (let i = 0; i < marginCount(55); i++) {
-    const p = marginPoint(-60);
-    if (!p) continue;
-    ctx.fillStyle = mr.next() < 0.5 ? hexA(theme.grassLight, 0.3) : hexA(theme.grassDark, 0.3);
-    ell(ctx, p.x, p.y, mr.range(40, 130), mr.range(20, 60), mr.range(0, TAU));
+  const softPatch = (r: Rng, x: number, y: number): void => {
+    const rad = r.range(60, 170);
+    const col = r.next() < 0.5 ? theme.grassLight : theme.grassDark;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    g.addColorStop(0, hexA(col, 0.6));
+    g.addColorStop(1, hexA(col, 0));
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(1, r.range(0.45, 0.8));
+    ctx.fillStyle = g;
+    circle(ctx, 0, 0, rad);
     ctx.fill();
+    ctx.restore();
+  };
+  for (let i = 0; i < marginCount(45); i++) {
+    const p = marginPoint(-80);
+    if (p) softPatch(mr, p.x, p.y);
   }
-  for (let i = 0; i < core(55); i++) {
-    ctx.fillStyle = rng.next() < 0.5 ? hexA(theme.grassLight, 0.3) : hexA(theme.grassDark, 0.3);
-    ell(ctx, rng.range(0, w), rng.range(0, h), rng.range(40, 130), rng.range(20, 60), rng.range(0, TAU));
-    ctx.fill();
+  for (let i = 0; i < core(45); i++) softPatch(rng, rng.range(0, w), rng.range(0, h));
+  // Крупный рисунок местности: несколько больших светлых полян и тёмных низин на весь кадр.
+  // Свой генератор от зерна карты: рисунок не зависит от ширины экрана.
+  const macro = new Rng(Math.floor(rng.next() * 1e9));
+  for (let i = 0; i < 7; i++) {
+    const x = macro.range(-100, w + 100);
+    const y = macro.range(-60, h + 60);
+    const rad = macro.range(220, 400);
+    const col = i % 2 === 0 ? theme.grassLight : theme.grassDark;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    g.addColorStop(0, hexA(col, 0.5));
+    g.addColorStop(0.6, hexA(col, 0.22));
+    g.addColorStop(1, hexA(col, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
   }
-  // Шахматный газон на клетках, где можно строить: остальное поле остаётся сплошным.
-  const light = tint(theme.grass, 0.07);
-  const dark = tint(theme.grass, -0.1);
+  // Фактура: травинки там, где трава, крапинки на песке, снегу и в пещере.
+  const blades = !theme.cave && theme.biome !== 'desert' && theme.biome !== 'snow';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 1.8;
+  for (let i = 0; i < Math.round(900 * dens * (1 + extra)); i++) {
+    const x = mr.range(v.x0, v.x1);
+    const y = mr.range(v.y0, v.y1);
+    if (blades) {
+      // Пучок из двух-трёх травинок веером: одиночные штрихи на телефоне сливаются в шум.
+      ctx.strokeStyle = mr.next() < 0.55 ? hexA(theme.grassDark, 0.7) : hexA(theme.grassLight, 0.75);
+      const n = mr.int(2, 4);
+      const lean = mr.range(-0.3, 0.3);
+      ctx.beginPath();
+      for (let k = 0; k < n; k++) {
+        const a = -Math.PI / 2 + lean + (k - (n - 1) / 2) * 0.42;
+        const l = mr.range(4.5, 8.5);
+        const bx = x + (k - (n - 1) / 2) * 1.6;
+        ctx.moveTo(bx, y);
+        ctx.quadraticCurveTo(bx + Math.cos(a) * l * 0.4, y + Math.sin(a) * l * 0.6, bx + Math.cos(a + lean * 0.6) * l, y + Math.sin(a) * l);
+      }
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = mr.next() < 0.5 ? hexA(theme.grassDark, 0.55) : hexA(theme.grassLight, 0.7);
+      circle(ctx, x, y, mr.range(0.7, 1.6));
+      ctx.fill();
+    }
+  }
+  // Клетки, где можно строить: лёгкая подкраска в шахматку поверх фактуры, а не сплошная заливка.
+  // На тёмной земле той же прозрачности хватает на заметную шахматку, поэтому там слабее.
+  const cellTint = theme.cave || theme.night ? 0.4 : 1;
+  const cellLight = `rgba(255,255,240,${0.03 * cellTint})`;
+  const cellDark = `rgba(20,30,0,${0.028 * cellTint})`;
   for (const p of plots) {
     const c = Math.floor(p.x / CELL);
     const r = Math.floor(p.y / CELL);
-    ctx.fillStyle = (c + r) % 2 === 0 ? light : dark;
+    ctx.fillStyle = (c + r) % 2 === 0 ? cellLight : cellDark;
     ctx.fillRect(p.x - CELL / 2, p.y - CELL / 2, CELL, CELL);
   }
+  // Фактура ландшафта новых актов: рябь песка, блёстки снега, щебень, хвоя.
+  if (theme.biome) biomeGround(ctx, theme.biome, theme, v, mr, Math.round(60 * dens * (1 + extra)));
   const leadDist = (x: number, y: number): number => {
     let d = Infinity;
     for (const l of leads) if (l) d = Math.min(d, segDist(x, y, l.x, l.y, l.x - l.dx * LEAD_LEN, l.y - l.dy * LEAD_LEN));
@@ -1408,29 +1692,94 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
   const inReserved = (x: number, y: number) => t.reserved.some((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
   const inWater = (y: number) => !!theme.water && y > theme.water.y - 26 && y < theme.water.y + theme.water.h + 26;
   const inWall = (y: number) => !!theme.wall && y < theme.wall.h + 30;
-  if (theme.water) drawWater(ctx, w, theme.water, rng, v, mr);
-  if (theme.oak) drawOak(ctx, w, rng, v, mr);
-  for (let i = 0; i < core(170); i++) {
+  const inBlob = (x: number, y: number) => !!theme.blobs?.some((b) => Math.hypot(b.x - x, b.y - y) < b.r + 12);
+  const bandKind = theme.bandKind ?? 'water';
+  if (theme.water) {
+    const x0 = Math.min(0, v.x0) - 40;
+    const x1 = Math.max(w, v.x1) + 40;
+    if (bandKind === 'ice') drawIce(ctx, theme.water, rng, x0, x1);
+    else if (bandKind === 'ravine') drawRavine(ctx, theme.water, rng, x0, x1);
+    else {
+      drawWater(ctx, w, theme.water, rng, v, mr);
+      if (bandKind === 'koi') koiStream(ctx, theme.water, rng, x0, x1);
+    }
+  }
+  const roots = theme.oak ? drawOak(ctx, w, rng, v, mr) : [];
+  // Ствол дуба и его корни: ни травы, ни декора поверх.
+  const onOak = (x: number, y: number): boolean => !!theme.oak && (y < 82 || roots.some((q) => Math.hypot(q.x - x, q.y - y) < 18));
+  const blocked = (x: number, y: number): boolean => inWater(y) || inWall(y) || inBlob(x, y) || onOak(x, y);
+  const tuft = (r: Rng, x: number, y: number): void => {
+    if (theme.cave) pebble(ctx, x, y, r.range(3, 6), r.range(2, 4));
+    else if (theme.biome) biomeTuft(ctx, theme.biome, theme, x, y, r);
+    else grassTuft(ctx, x, y, r, theme.grassDark, theme.grassLight);
+  };
+  for (let i = 0; i < core(150); i++) {
     const x = rng.range(10, w - 10);
     const y = rng.range(90, h - 10);
-    if (!farFromPath(x, y, 42) || inWater(y) || inWall(y)) continue;
-    if (theme.cave) pebble(ctx, x, y, rng.range(3, 6), rng.range(2, 4));
-    else grassTuft(ctx, x, y, rng, theme.grassDark, theme.grassLight);
+    if (!farFromPath(x, y, 42) || blocked(x, y)) continue;
+    tuft(rng, x, y);
   }
-  for (let i = 0; i < marginCount(170); i++) {
+  for (let i = 0; i < marginCount(150); i++) {
     const p = marginPoint(10);
-    if (!p || !farFromPath(p.x, p.y, 42) || inReserved(p.x, p.y) || inWater(p.y) || inWall(p.y)) continue;
-    if (theme.cave) pebble(ctx, p.x, p.y, mr.range(3, 6), mr.range(2, 4));
-    else grassTuft(ctx, p.x, p.y, mr, theme.grassDark, theme.grassLight);
+    if (!p || !farFromPath(p.x, p.y, 42) || inReserved(p.x, p.y) || blocked(p.x, p.y)) continue;
+    tuft(mr, p.x, p.y);
   }
 
-  // тропы: те, что приходят из-за края кадра, на полях тянутся до края экрана
+  // ── тропы: неровная полоса, вытоптанная трава по краям, колеи, травинки на кромке ──
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  const dense = (pts: readonly Vec[]): Vec[] => {
+    const out: Vec[] = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 10));
+      for (let k = 1; k <= n; k++) out.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
+    }
+    return out;
+  };
+  /** Сдвиг поперёк тропы на плавную «волну»: края перестают быть идеальной линией. */
+  const shifted = (pts: readonly Vec[], amp: number, p1: number, p2: number, offset = 0): Vec[] => {
+    let d = 0;
+    return pts.map((p, i) => {
+      if (i > 0) d += Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y);
+      const q = pts[Math.min(i + 1, pts.length - 1)];
+      const o = pts[Math.max(i - 1, 0)];
+      const a = Math.atan2(q.y - o.y, q.x - o.x);
+      const k = offset + amp * (0.6 * Math.sin(d * 0.021 + p1) + 0.4 * Math.sin(d * 0.053 + p2));
+      return { x: p.x - Math.sin(a) * k, y: p.y + Math.cos(a) * k };
+    });
+  };
+  /** Скруглить повороты: прямые углы сразу выдают сетку, а муравьи на изгибе срезают всего несколько пикселей. */
+  const rounded = (pts: readonly Vec[], rad: number): Vec[] => {
+    const out: Vec[] = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = pts[i - 1];
+      const p = pts[i];
+      const b = pts[i + 1];
+      const la = Math.hypot(p.x - a.x, p.y - a.y);
+      const lb = Math.hypot(b.x - p.x, b.y - p.y);
+      const r = Math.min(rad, la * 0.45, lb * 0.45);
+      if (r < 4) {
+        out.push(p);
+        continue;
+      }
+      const s0 = { x: p.x + ((a.x - p.x) / la) * r, y: p.y + ((a.y - p.y) / la) * r };
+      const s1 = { x: p.x + ((b.x - p.x) / lb) * r, y: p.y + ((b.y - p.y) / lb) * r };
+      for (let k = 0; k <= 8; k++) {
+        const t = k / 8;
+        const u = 1 - t;
+        out.push({ x: u * u * s0.x + 2 * u * t * p.x + t * t * s1.x, y: u * u * s0.y + 2 * u * t * p.y + t * t * s1.y });
+      }
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  };
   const lines = paths.map((p, i) => {
     const l = leads[i];
-    return l ? [{ x: l.x - l.dx * LEAD_LEN, y: l.y - l.dy * LEAD_LEN }, ...p.pts] : p.pts;
+    return dense(rounded(l ? [{ x: l.x - l.dx * LEAD_LEN, y: l.y - l.dy * LEAD_LEN }, ...p.pts] : p.pts, 46));
   });
+  const phases = lines.map(() => [rng.range(0, TAU), rng.range(0, TAU), rng.range(0, TAU), rng.range(0, TAU)] as const);
   const strokeLine = (pts: readonly Vec[], width: number, color: string) => {
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
@@ -1441,31 +1790,51 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
     }
     ctx.stroke();
   };
-  for (const pts of lines) strokeLine(pts, 72, theme.dirtDark);
-  for (const pts of lines) strokeLine(pts, 60, theme.dirt);
-  for (const pts of lines) strokeLine(pts, 30, 'rgba(255,236,200,0.16)');
-  if (theme.water) for (const path of paths) drawBridge(ctx, path, theme.water);
+  const body = lines.map((pts, i) => shifted(pts, 4.5, phases[i][0], phases[i][1]));
+  // Вытоптанная трава вокруг тропы.
+  for (const pts of body) strokeLine(pts, 96, hexA(theme.dirtDark, 0.14));
+  for (const pts of body) strokeLine(pts, 82, hexA(theme.dirtDark, 0.12));
+  for (const pts of body) strokeLine(pts, 72, theme.dirtDark);
+  for (const pts of body) strokeLine(pts, 60, theme.dirt);
+  // Колеи и светлая середина.
+  lines.forEach((pts, i) => {
+    for (const side of [-1, 1]) strokeLine(shifted(pts, 3, phases[i][2], phases[i][3], side * 12), 4, hexA(theme.dirtDark, 0.22));
+    strokeLine(shifted(pts, 6, phases[i][3], phases[i][2]), 24, 'rgba(255,236,200,0.14)');
+  });
+  if (theme.water) {
+    // Мост по виду полосы: бревно над водой, красный мостик над ручьём с карпами, подвесной над ущельем; лёд переходят так.
+    for (const path of paths) {
+      if (bandKind === 'water') drawBridge(ctx, path, theme.water);
+      else if (bandKind === 'koi') redBridge(ctx, path, theme.water);
+      else if (bandKind === 'ravine') ropeBridge(ctx, path, theme.water);
+    }
+  }
   for (const path of paths) {
-    for (let d = 10; d < path.length; d += 22) {
+    for (let d = 10; d < path.length; d += 18) {
       const p = path.at(d);
+      if (inWater(p.y) && theme.water) continue;
       const nx = -Math.sin(p.angle);
       const ny = Math.cos(p.angle);
-      const off = rng.range(-18, 18);
-      ctx.fillStyle = 'rgba(60,30,5,0.12)';
-      ell(ctx, p.x + nx * off, p.y + ny * off, rng.range(3, 6), rng.range(2, 3.5), p.angle);
+      const off = rng.range(-20, 20);
+      ctx.fillStyle = rng.next() < 0.7 ? 'rgba(60,30,5,0.13)' : 'rgba(255,240,210,0.16)';
+      ell(ctx, p.x + nx * off, p.y + ny * off, rng.range(2, 5), rng.range(1.5, 3.2), p.angle);
       ctx.fill();
     }
-    for (let d = 20; d < path.length - 60; d += 34) {
+    for (let d = 20; d < path.length - 60; d += rng.range(16, 44)) {
       const p = path.at(d);
       const nx = -Math.sin(p.angle);
       const ny = Math.cos(p.angle);
       for (let side = -1; side <= 1; side += 2) {
-        if (rng.next() < 0.7) {
-          const k = side * rng.range(31, 36);
-          const px = p.x + nx * k;
-          const py = p.y + ny * k;
-          if (nearestPath(px, py) > 28) pebble(ctx, px, py, rng.range(2.5, 4.5), rng.range(1.8, 3.2));
-        }
+        // В пещере «травинка» тоже камешек, и кромка превращалась в бусы: там реже.
+        if (rng.next() < (theme.cave ? 0.7 : 0.35)) continue;
+        const k = side * rng.range(28, 38);
+        const px = p.x + nx * k;
+        const py = p.y + ny * k;
+        if (nearestPath(px, py) < 26 || (theme.water && inWater(py))) continue;
+        const roll = rng.next();
+        // Кромка: камешки и травинки, свисающие на край тропы.
+        if (roll < 0.3) pebble(ctx, px, py, rng.range(2.5, 5), rng.range(1.8, 3.4));
+        else if (roll < 0.9 && !onOak(px, py)) tuft(rng, px, py);
       }
     }
   }
@@ -1491,24 +1860,26 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
     }
   }
 
-  // декор
+  // ── декор: группы (клумбы, кольца грибов, груды камней) и одиночки ──
   const colors = ['#ff8fb1', '#fff1f1', '#ffd54f', '#c89bff', '#ff7a59'];
   const pP = theme.puddles;
   const pM = pP + theme.mushrooms;
   const pF = pM + theme.flowers;
-  const decorOk = (x: number, y: number): boolean => {
-    if (!farFromPath(x, y, 54)) return false;
-    if (inReserved(x, y) || inWater(y) || inWall(y)) return false;
+  const decorOk = (x: number, y: number, gap = 54): boolean => {
+    if (!farFromPath(x, y, gap)) return false;
+    if (inReserved(x, y) || blocked(x, y)) return false;
     if (Math.hypot(anthill.x - x, anthill.y - y) < 130) return false;
     if (theme.stump && Math.hypot(theme.stump.x - x, theme.stump.y - y) < 115) return false;
     return true;
   };
+  const nightCap = theme.night ? '#6fd3a0' : PAL.mushroomCap;
+  const nightDot = theme.night ? '#eafff3' : '#fff3e6';
   const decorAt = (r: Rng, x: number, y: number): void => {
     const roll = r.next();
     if (roll < pP) puddle(ctx, x, y, r);
     else if (roll < pM) {
       if (theme.night) glowSpot(ctx, x, y - 6, 26, '140,255,170', 0.35);
-      mushroom(ctx, x, y, r.range(6, 10), r.int(0, 3), theme.night ? '#6fd3a0' : PAL.mushroomCap, theme.night ? '#eafff3' : '#fff3e6');
+      mushroom(ctx, x, y, r.range(6, 10), r.int(0, 3), nightCap, nightDot);
     } else if (roll < pF) flower(ctx, x, y, r.pick(colors));
     else {
       const k = r.next();
@@ -1518,20 +1889,74 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
       else leaf(ctx, x, y, r.range(9, 14), r.range(4, 6), r.range(0, TAU), r.pick(['#c77f3a', '#d9a24a', '#9bbf3f']), 'rgba(60,30,5,0.5)');
     }
   };
-  for (let i = 0; i < core(130); i++) {
+  /** Группа одинакового декора: клумба одного цвета, кольцо грибов, груда камней, клевер, опавшие листья. */
+  const cluster = (r: Rng, x: number, y: number): void => {
+    if (theme.biome) {
+      biomeCluster(ctx, theme, x, y, r);
+      return;
+    }
+    const kind = r.next();
+    const n = r.int(4, 7);
+    const pts: Vec[] = [];
+    for (let i = 0; i < n; i++) pts.push({ x: x + r.range(-26, 26), y: y + r.range(-15, 15) });
+    pts.sort((a, b) => a.y - b.y);
+    if (kind < 0.32 && !theme.cave) {
+      const col = r.pick(colors);
+      for (const p of pts) flower(ctx, p.x, p.y, col);
+    } else if (kind < 0.52) {
+      if (theme.night) glowSpot(ctx, x, y, 40, '140,255,170', 0.3);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU;
+        mushroom(ctx, x + Math.cos(a) * 20, y + Math.sin(a) * 11, r.range(5, 8), r.int(0, 3), nightCap, nightDot);
+      }
+    } else if (kind < 0.7) {
+      for (const p of pts) pebble(ctx, p.x, p.y, r.range(4, 8), r.range(3, 5));
+    } else if (kind < 0.86 && !theme.cave) {
+      for (const p of pts) clover(ctx, p.x, p.y, r.range(4, 6));
+    } else {
+      for (const p of pts) leaf(ctx, p.x, p.y, r.range(8, 12), r.range(3.5, 5), r.range(0, TAU), r.pick(['#c77f3a', '#d9a24a', '#b5532a']), 'rgba(60,30,5,0.5)');
+    }
+  };
+  const decor = (r: Rng, x: number, y: number): void => {
+    if (theme.biome) biomeDecor(ctx, theme.biome, theme, x, y, r);
+    else decorAt(r, x, y);
+  };
+  for (let i = 0; i < core(12); i++) {
+    const x = rng.range(40, w - 40);
+    const y = rng.range(100, h - 40);
+    if (decorOk(x, y, 74)) cluster(rng, x, y);
+  }
+  for (let i = 0; i < marginCount(12); i++) {
+    const p = marginPoint(40);
+    if (p && decorOk(p.x, p.y, 74)) cluster(mr, p.x, p.y);
+  }
+  for (let i = 0; i < core(85); i++) {
     const x = rng.range(16, w - 16);
     const y = rng.range(16, h - 16);
-    if (decorOk(x, y)) decorAt(rng, x, y);
+    if (decorOk(x, y)) decor(rng, x, y);
   }
-  for (let i = 0; i < marginCount(130); i++) {
+  for (let i = 0; i < marginCount(85); i++) {
     const p = marginPoint(16);
-    if (p && decorOk(p.x, p.y)) decorAt(mr, p.x, p.y);
+    if (p && decorOk(p.x, p.y)) decor(mr, p.x, p.y);
   }
+  // Крупные акценты местности: кусты, камыши, скалы, пруды, стволы, бамбук, сугробы.
+  for (const b of [...(theme.blobs ?? [])].sort((a, b2) => a.y - b2.y)) biomeBlob(ctx, theme, b, rng);
 
   if (theme.stump) drawStump(ctx, theme.stump.x, theme.stump.y, rng);
   if (theme.wall) drawWall(ctx, w, theme.wall.h, paths, rng, v, mr);
   if (theme.cave) drawCaveWalls(ctx, w, h, rng, v, mr);
   drawAnthill(ctx, anthill.x, anthill.y, rng);
+  // Лёгкая виньетка: края экрана чуть темнее, середина поля светлее.
+  if (!theme.cave) {
+    const cx = (v.x0 + v.x1) / 2;
+    const cy = (v.y0 + v.y1) / 2;
+    const R = Math.hypot(v.x1 - v.x0, v.y1 - v.y0) / 2;
+    const g = ctx.createRadialGradient(cx, cy, R * 0.5, cx, cy, R);
+    g.addColorStop(0, 'rgba(25,15,0,0)');
+    g.addColorStop(1, 'rgba(25,15,0,0.24)');
+    ctx.fillStyle = g;
+    ctx.fillRect(v.x0, v.y0, v.x1 - v.x0, v.y1 - v.y0);
+  }
 }
 
 /** Пятиконечная звезда для экрана победы и карточек уровней. */

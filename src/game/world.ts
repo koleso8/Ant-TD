@@ -118,6 +118,7 @@ export class World implements GameCtx {
         if (t.water && cy + 30 > t.water.y - 10 && cy - 30 < t.water.y + t.water.h + 10) continue;
         if (t.wall && cy - 30 < t.wall.h + 10) continue;
         if (t.stump && dist(cx, cy, t.stump.x, t.stump.y) < 110) continue;
+        if (t.blobs?.some((b) => dist(cx, cy, b.x, b.y) < b.r + 26)) continue;
         let ok = true;
         outer: for (let i = -1; i <= 1; i++) {
           for (let j = -1; j <= 1; j++) {

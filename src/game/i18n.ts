@@ -1,5 +1,7 @@
 import { DIFFICULTIES, HERO, SPELLS, TARGET_MODES, TOWERS, type DifficultyId, type SpellId, type TargetMode, type TowerKind } from './config';
-import { ACTS, GAME_TITLE, LEVELS, TUTORIAL } from './levels';
+import { GAME_TITLE, TUTORIAL } from './levels';
+import { ACTS, LEVELS } from './campaign';
+import { MAP_TEXTS } from './maptexts';
 import { ENDLESS } from './endless';
 import { PERKS } from './perks';
 
@@ -81,8 +83,6 @@ const UI_RU = {
   'intro.hint2': 'Q, W, E: заклинания. Пробел: пауза. N: следующая волна. Esc или правая кнопка: отмена.',
   'end.won': 'Муравейник выстоял!',
   'end.lost': 'Муравейник пал...',
-  'end.finaleAct1': ' Акт 1 завершён: утром колония сама выступает в поход на термитник.',
-  'end.finaleAll': ' Термитник пал, королева мертва. Поход окончен, колония возвращается домой с победой.',
   'end.difficulty': 'Сложность: {0}.',
   'end.wonText': 'Все {0} волн отбиты, личинок уцелело {1} из {2}. {3}{4}',
   'end.lostText': 'Продержались волн: {0} из {1}. {2} Попробуй казарму на развилке и не копи заклинания{3}.',
@@ -134,6 +134,10 @@ const UI_RU = {
   'levels.record': 'Рекорд: волна {0}',
   'levels.noRecord': 'Рекорда пока нет',
   'levels.lockedTutorial': 'Пройди обучение',
+  'levels.map': 'Карта {0}',
+  'levels.actLocked': 'Возьми звезду на каждой карте прошлого акта',
+  'end.next': 'Дальше',
+  'end.actUnlocked': ' Открыт {0}.',
   'intro.tutorial': 'Обучение',
   'intro.tutorialStats': '5 коротких волн · одна тропа · подсказки прямо на поле',
   'intro.skip': 'Пропустить обучение',
@@ -230,8 +234,6 @@ const UI_EN: Record<UiKey, string> = {
   'intro.hint2': 'Q, W, E: spells. Space: pause. N: next wave. Esc or right click: cancel.',
   'end.won': 'The anthill stands!',
   'end.lost': 'The anthill has fallen...',
-  'end.finaleAct1': ' Act 1 complete: at dawn the colony marches on the termite mound.',
-  'end.finaleAll': ' The mound has fallen and the empress is dead. The campaign is over; the colony returns home in triumph.',
   'end.difficulty': 'Difficulty: {0}.',
   'end.wonText': 'All {0} waves repelled, {1} of {2} larvae survived. {3}{4}',
   'end.lostText': 'Waves survived: {0} of {1}. {2} Try barracks at the fork and do not hoard spells{3}.',
@@ -283,6 +285,10 @@ const UI_EN: Record<UiKey, string> = {
   'levels.record': 'Best: wave {0}',
   'levels.noRecord': 'No record yet',
   'levels.lockedTutorial': 'Finish the tutorial',
+  'levels.map': 'Map {0}',
+  'levels.actLocked': 'Earn a star on every map of the previous act',
+  'end.next': 'Next',
+  'end.actUnlocked': ' Unlocked: {0}.',
   'intro.tutorial': 'Tutorial',
   'intro.tutorialStats': '5 short waves · one path · hints right on the field',
   'intro.skip': 'Skip the tutorial',
@@ -472,13 +478,34 @@ const LEVELS_EN: Record<string, LevelText> = {
 };
 export function levelText(id: string): LevelText {
   const lv = [TUTORIAL, ...LEVELS, ENDLESS].find((l) => l.id === id)!;
-  if (current === 'en' && LEVELS_EN[id]) return LEVELS_EN[id];
+  if (current === 'en') {
+    if (LEVELS_EN[id]) return LEVELS_EN[id];
+    const gen = MAP_TEXTS[id]?.en;
+    if (gen) return { name: gen.name, subtitle: gen.name, story: gen.story };
+  }
   return { name: lv.name, subtitle: lv.subtitle, story: lv.story };
 }
 
-const ACTS_EN = ['Act 1 · Defense of the Anthill', 'Act 2 · March on the Termite Mound'];
+const ACTS_EN = [
+  'Act 1 · Defense of the Anthill', 'Act 2 · March on the Termite Mound', 'Act 3 · Desert', 'Act 4 · Mountains',
+  'Act 5 · Jungle', 'Act 6 · Snow', 'Act 7 · Forest', 'Act 8 · Asia',
+];
+const FINALES_EN = [
+  ' Act 1 is over: in the morning the colony itself marches on the termite mound.',
+  ' The mound has fallen, the empress is dead. The colony sends scouts beyond the edge of the forest.',
+  ' The sands are behind: the caravan reached the oasis, and blue mountains rise ahead.',
+  ' The pass is taken. From the peaks a sea of green is visible: the jungle.',
+  ' The jungle parted, and a cold wind blew: snow lies ahead.',
+  ' Winter retreated. Home forest lies ahead, but strangers have come there too.',
+  ' The forest is ours again. The last road of the colony leads east, to the bamboo groves.',
+  ' The great march is over: from the desert to the bamboo groves, the anthills stand unbroken.',
+];
 export function actTitle(i: number): string {
   return current === 'en' ? ACTS_EN[i] ?? ACTS[i].title : ACTS[i].title;
+}
+/** Строка победы на последней карте акта. */
+export function actFinale(i: number): string {
+  return current === 'en' ? FINALES_EN[i] ?? ACTS[i].finale : ACTS[i].finale;
 }
 
 export function gameTitle(): string {

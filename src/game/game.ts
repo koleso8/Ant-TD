@@ -7,7 +7,8 @@ import type { Input } from '../engine/input';
 import { Rng } from '../engine/rng';
 import { dist, roundRect, type Vec } from '../engine/math';
 import { CELL, DIFFICULTIES, ENEMIES, LOGICAL_H, LOGICAL_W, SPELLS, TARGET_MODES, TOWERS, type DifficultyDef, type DifficultyId, type EnemyKind, type TargetModeDef, type TowerKind } from './config';
-import { LEVELS, TUTORIAL, levelSize, type LevelDef } from './levels';
+import { TUTORIAL, levelSize, type LevelDef } from './levels';
+import { ACTS, LEVELS, LEVEL_ACT } from './campaign';
 import { defaultProgress, difficultyRank, freeStars, loadProgress, saveProgress, totalStars, type EndlessRecord, type Progress } from './progress';
 import { PERKS, perksFromRanks, type Perks } from './perks';
 import { World } from './world';
@@ -17,7 +18,7 @@ import { UI } from './ui';
 import { PAL } from '../render/palette';
 import { drawText } from '../render/text';
 import {
-  ANT_WORKER, circle, drawAnt, drawHammer, drawHardHat, drawLadder, drawRange, drawShadow, drawSporeCloud, drawTerrain, ell, leadRoom, pathLead, pennant, twig,
+  ANT_WORKER, circle, drawAnt, setTowerStyle, drawHammer, drawHardHat, drawLadder, drawRange, drawShadow, drawSporeCloud, drawTerrain, ell, leadRoom, pathLead, pennant, twig,
 } from '../render/art';
 import { Enemy } from './enemy';
 import type { Builder, Construction } from './construction';
@@ -76,6 +77,10 @@ export class Game {
   earnedStars = 0;
   /** Первый тап по «Сбросить прогресс» только предупреждает. */
   resetArmed = false;
+  /** Какой акт открыт на экране кампании. */
+  levelsAct = 0;
+  /** Победа на этой карте впервые закрыла акт (номер акта), иначе null. */
+  actCompleted: number | null = null;
   /** Откуда открыли настройки: туда и вернёмся. */
   settingsFrom: GameState = 'title';
   /** Подсказка, как поставить игру на главный экран (iPhone и iPad). */
@@ -167,12 +172,37 @@ export class Game {
 
   // ───────────── уровни и прогресс ─────────────
 
-  /** Первый уровень кампании открывает обучение, следующие — победа на предыдущем; кто уже побеждал здесь, тому открыто. */
+  /** Карты открытого акта доступны все сразу, в любом порядке. */
   isUnlocked(i: number): boolean {
+    return this.isActUnlocked(LEVEL_ACT[i] ?? 0);
+  }
+
+  /**
+   * Первый акт открывает обучение, каждый следующий — хотя бы одна звезда на всех картах предыдущего.
+   * Кто уже побеждал в акте (сохранения до актов по девять карт), тому он открыт.
+   */
+  isActUnlocked(a: number): boolean {
     if (import.meta.env.DEV) return true;
-    const stars = (lv: LevelDef): number => this.progress.stars[lv.id] ?? 0;
-    if (stars(LEVELS[i]) > 0) return true;
-    return i === 0 ? this.progress.tutorialDone : stars(LEVELS[i - 1]) > 0;
+    const act = ACTS[a];
+    if (!act) return false;
+    for (let i = act.from; i <= act.to; i++) if (this.starsFor(i) > 0) return true;
+    return a === 0 ? this.progress.tutorialDone : this.actDone(a - 1);
+  }
+
+  /** На каждой карте акта есть хотя бы одна звезда. */
+  actDone(a: number): boolean {
+    const act = ACTS[a];
+    if (!act || act.to < act.from) return false;
+    for (let i = act.from; i <= act.to; i++) if (this.starsFor(i) === 0) return false;
+    return true;
+  }
+
+  /** Звёзды акта и сколько их можно взять. */
+  actStars(a: number): { have: number; max: number } {
+    const act = ACTS[a];
+    let have = 0;
+    for (let i = act.from; i <= act.to; i++) have += this.starsFor(i);
+    return { have, max: Math.max(0, act.to - act.from + 1) * 3 };
   }
 
   starsFor(i: number): number {
@@ -186,6 +216,8 @@ export class Game {
   /** Загрузить уровень; index — номер в кампании, у обучения и бесконечной осады -1. */
   private loadDef(def: LevelDef, index: number): void {
     this.levelIndex = index;
+    // Постройки в стиле ландшафта карты (пока готов эталон: бамбуковые стрелки Азии).
+    setTowerStyle(def.theme.biome ?? null);
     this.world = this.makeWorld(def);
     this.bg = null;
     this.nextPaths = null;
@@ -288,6 +320,14 @@ export class Game {
   toLevels(): void {
     // Ушли из забега бесконечной осады: дошедшее до сих пор тоже идёт в рекорд.
     if (this.state === 'playing') this.commitEndless();
+    // Экран кампании открывается на акте последней карты, а с заставки — на самом дальнем открытом.
+    if (this.mode === 'campaign' && this.state !== 'title') this.levelsAct = LEVEL_ACT[this.levelIndex] ?? 0;
+    else if (this.state === 'title') {
+      let a = 0;
+      while (a + 1 < ACTS.length && this.isActUnlocked(a + 1) && this.actHasStars(a + 1)) a++;
+      if (a + 1 < ACTS.length && this.isActUnlocked(a + 1) && this.actDone(a)) a++;
+      this.levelsAct = a;
+    }
     this.state = 'levels';
     this.paused = false;
     this.resetArmed = false;
@@ -401,10 +441,24 @@ export class Game {
     this.newRecord = true;
   }
 
+  /** На какой-нибудь карте акта уже есть звезда. */
+  private actHasStars(a: number): boolean {
+    const act = ACTS[a];
+    for (let i = act.from; i <= act.to; i++) if (this.starsFor(i) > 0) return true;
+    return false;
+  }
+
+  /** Следующая карта по порядку, если она открыта: кнопка «Дальше» на экране победы. */
+  nextLevel(): number | null {
+    const i = this.levelIndex + 1;
+    return this.mode === 'campaign' && i < LEVELS.length && this.isUnlocked(i) ? i : null;
+  }
+
   private onWin(): void {
     this.state = 'won';
     audio.play('win');
     this.selected = null;
+    this.actCompleted = null;
     if (this.mode === 'tutorial') {
       // Обучение звёзд не даёт: оно открывает кампанию и бесконечную осаду.
       this.earnedStars = 0;
@@ -415,9 +469,13 @@ export class Game {
     const frac = this.lives / Math.max(1, this.world.startLives);
     this.earnedStars = frac >= 0.9 ? 3 : frac >= 0.5 ? 2 : 1;
     const id = this.level.id;
+    const a = LEVEL_ACT[this.levelIndex] ?? 0;
+    const wasDone = this.actDone(a);
     this.progress.stars[id] = Math.max(this.progress.stars[id] ?? 0, this.earnedStars);
     if (difficultyRank(this.difficulty.id) > difficultyRank(this.progress.beaten[id])) this.progress.beaten[id] = this.difficulty.id;
     saveProgress(this.progress);
+    // Эта победа закрыла акт: на экране итогов строка финала и что открылось дальше.
+    if (!wasDone && this.actDone(a)) this.actCompleted = a;
   }
 
   // ───────────── действия игрока ─────────────

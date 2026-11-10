@@ -1,5 +1,5 @@
 import type { Vec } from '../engine/math';
-import type { WaveDef } from './config';
+import { HP_GROWTH_PER_WAVE, type WaveDef } from './config';
 
 export const GAME_TITLE = 'Муравейник: Осада';
 
@@ -26,7 +26,17 @@ export interface LevelTheme {
   wall?: { h: number };
   /** Пещера: виньетка, камни по краям, вместо травы галька. */
   cave?: boolean;
+  /** Ландшафт новых актов: свой декор, препятствия и вид полосы поперёк карты. Без него — лесная поляна. */
+  biome?: Biome;
+  /** Чем нарисована полоса water: вода с брёвнами, лёд, ущелье с мостиком, ручей с красным мостиком. */
+  bandKind?: BandKind;
+  /** Препятствия (камни, пруды, стволы, бамбук, сугробы): ни троп, ни застройки. */
+  blobs?: ReadonlyArray<{ x: number; y: number; r: number }>;
 }
+
+/** Ландшафты новых актов. */
+export type Biome = 'desert' | 'mountains' | 'jungle' | 'snow' | 'forest' | 'asia';
+export type BandKind = 'water' | 'ice' | 'ravine' | 'koi';
 
 
 export interface LevelDef {
@@ -59,19 +69,19 @@ export function levelSize(lv: LevelDef): { w: number; h: number } {
   return lv.size ?? { w: 1280, h: 720 };
 }
 
-const MEADOW: LevelTheme = {
+export const MEADOW: LevelTheme = {
   grass: '#6cae47', grassLight: '#86c45c', grassDark: '#569a39',
   dirt: '#c08a4e', dirtDark: '#7d4f26',
   flowers: 0.26, mushrooms: 0.08, puddles: 0, oak: false, night: false,
 };
 
-const ROOTS: LevelTheme = {
+export const ROOTS: LevelTheme = {
   grass: '#5e8f3b', grassLight: '#78a850', grassDark: '#486f2e',
   dirt: '#ad7a40', dirtDark: '#6d4420',
   flowers: 0.08, mushrooms: 0.22, puddles: 0.1, oak: true, night: false,
 };
 
-const NIGHT: LevelTheme = {
+export const NIGHT: LevelTheme = {
   grass: '#33503f', grassLight: '#43664f', grassDark: '#263d30',
   dirt: '#7a6a55', dirtDark: '#4a3d31',
   flowers: 0.04, mushrooms: 0.3, puddles: 0.12, oak: false, night: true, stump: { x: 100, y: 150 },
@@ -174,6 +184,8 @@ export const LEVEL2: LevelDef = {
   lives: 20,
   waves: LEVEL2_WAVES,
   theme: ROOTS,
+  // Первый акт проходится и без заклинаний: без этой скидки робот без них падал здесь на 8-й волне.
+  hpMul: (n) => (1 + HP_GROWTH_PER_WAVE * (n - 1)) * 0.85,
 };
 
 /** Тропа 0 выходит из норы в пне слева, тропа 1 из темноты справа; обе ведут к муравейнику в центре. */
@@ -234,19 +246,19 @@ export const LEVEL3: LevelDef = {
   theme: NIGHT,
 };
 
-const STREAM: LevelTheme = {
+export const STREAM: LevelTheme = {
   grass: '#5f9d4a', grassLight: '#7bb45e', grassDark: '#4a7f38',
   dirt: '#b68a56', dirtDark: '#75502b',
   flowers: 0.18, mushrooms: 0.06, puddles: 0.06, oak: false, night: false, water: { y: 320, h: 80 },
 };
 
-const MOUND: LevelTheme = {
+export const MOUND: LevelTheme = {
   grass: '#b5a06c', grassLight: '#c9b683', grassDark: '#9a8656',
   dirt: '#8f6a40', dirtDark: '#5e4327',
   flowers: 0.02, mushrooms: 0.04, puddles: 0, oak: false, night: false, wall: { h: 140 },
 };
 
-const CAVE: LevelTheme = {
+export const CAVE: LevelTheme = {
   grass: '#4a3b30', grassLight: '#5a4a3c', grassDark: '#3a2d24',
   dirt: '#7a6552', dirtDark: '#4a3b2e',
   flowers: 0, mushrooms: 0.35, puddles: 0.08, oak: false, night: true, cave: true,
@@ -372,7 +384,8 @@ export const LEVEL6: LevelDef = {
   theme: CAVE,
 };
 
-export const LEVELS: readonly LevelDef[] = [LEVEL1, LEVEL2, LEVEL3, LEVEL4, LEVEL5, LEVEL6];
+/** Шесть уровней, нарисованных вручную: начала и финалы первых двух актов (см. campaign.ts). */
+export const HANDMADE: readonly LevelDef[] = [LEVEL1, LEVEL2, LEVEL3, LEVEL4, LEVEL5, LEVEL6];
 
 /** Пять коротких волн обучения: каждая показывает одну новую вещь. */
 const TUTORIAL_WAVES: readonly WaveDef[] = [
@@ -414,13 +427,3 @@ export const TUTORIAL: LevelDef = {
   hpMul: (n) => 0.6 + 0.05 * (n - 1),
 };
 
-export interface ActDef {
-  title: string;
-  from: number;
-  to: number;
-}
-
-export const ACTS: readonly ActDef[] = [
-  { title: 'Акт 1 · Оборона муравейника', from: 0, to: 2 },
-  { title: 'Акт 2 · Поход на термитник', from: 3, to: 5 },
-];

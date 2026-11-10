@@ -5,7 +5,8 @@
  * Бесконечную осаду робот играет до падения муравейника и сообщает, сколько волн отбил.
  */
 import { Rng } from '../src/engine/rng';
-import { LEVELS, TUTORIAL, type LevelDef } from '../src/game/levels';
+import { TUTORIAL, type LevelDef } from '../src/game/levels';
+import { LEVELS } from '../src/game/campaign';
 import { ENDLESS } from '../src/game/endless';
 import { World } from '../src/game/world';
 import { NO_PERKS, type Perks } from '../src/game/perks';

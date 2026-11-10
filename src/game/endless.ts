@@ -55,7 +55,7 @@ function budget(n: number): number {
  * в этих единицах, а не в награде: у слизня на единицу награды втрое больше здоровья, чем у осы,
  * и волна из одних слизней иначе была бы втрое тяжелее волны из ос.
  */
-function threat(kind: EnemyKind): number {
+export function threat(kind: EnemyKind): number {
   const d = ENEMIES[kind];
   let v = d.hp / (1 - d.armor * 0.6) + (d.regen ?? 0) * 20;
   if (d.flying) v *= 1.3;

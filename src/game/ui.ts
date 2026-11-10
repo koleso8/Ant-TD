@@ -1,10 +1,11 @@
 import { clamp, dist, roundRect, TAU, type Vec } from '../engine/math';
 import { CELL, DIFFICULTIES, LOGICAL_H, LOGICAL_W, SPELLS, TOWERS, TOWER_ORDER, type SpecDef, type TowerKind } from './config';
-import { ACTS, GAME_TITLE, LEVELS, TUTORIAL, levelSize, type LevelDef } from './levels';
+import { TUTORIAL, levelSize, type LevelDef } from './levels';
+import { ACTS, LEVELS, LEVEL_ACT, THEMES } from './campaign';
 import { ENDLESS } from './endless';
 import { PERKS } from './perks';
 import { freeStars, totalStars } from './progress';
-import { actTitle, difficultyText, gameTitle, getLang, LANGS, levelText, perkText, spellText, t, targetText, towerText } from './i18n';
+import { actFinale, actTitle, difficultyText, gameTitle, getLang, LANGS, levelText, perkText, spellText, t, targetText, towerText } from './i18n';
 import { Path, snapWaypoints } from './path';
 import type { Game } from './game';
 import { canInstall, fullscreenSupported, isInstalledApp, manualInstall, promptInstall } from '../engine/device';
@@ -794,8 +795,16 @@ export class UI {
       ctx.fillRect(-20, -30, LOGICAL_W + 40, 100);
     }
     if (lv.theme.water) {
-      ctx.fillStyle = '#4f8fc0';
+      const kind = lv.theme.bandKind ?? 'water';
+      ctx.fillStyle = kind === 'ice' ? '#bfe0f5' : kind === 'ravine' ? '#1e140c' : '#4f8fc0';
       ctx.fillRect(-20, lv.theme.water.y, LOGICAL_W + 40, lv.theme.water.h);
+    }
+    // Препятствия ландшафта: пятна цвета скал, прудов, стволов.
+    const blobColor: Record<string, string> = { desert: '#d38a4a', mountains: '#8f8f8a', jungle: '#2f8a35', snow: '#ffffff', forest: '#6b4424', asia: '#7fae4a' };
+    for (const b of lv.theme.blobs ?? []) {
+      ctx.fillStyle = blobColor[lv.theme.biome ?? ''] ?? '#8f8f8a';
+      ell(ctx, b.x, b.y, b.r, b.r * 0.6);
+      ctx.fill();
     }
     if (lv.theme.wall) {
       ctx.fillStyle = '#6b4f32';
@@ -851,39 +860,6 @@ export class UI {
     ctx.fill();
   }
 
-  /**
-   * Карточка уровня: миниатюра карты, подпись сверху, справа звёзды или галочка, имя и кнопка.
-   * Закрытая карточка затемнена замком и подсказкой, что открыть.
-   */
-  private card(
-    ctx: CanvasRenderingContext2D, lv: LevelDef, x: number, y: number, w: number, h: number,
-    o: { header: string; unlocked: boolean; lockText: string; stars?: number; check?: boolean; played: boolean; onTap: () => void },
-  ): void {
-    this.panel(ctx, x, y, w, h, 18);
-    this.miniMap(ctx, lv, x + 12, y + 12, w - 24, 104);
-    drawText(ctx, o.header, x + 16, y + 132, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
-    if (o.stars !== undefined) for (let s = 0; s < 3; s++) drawStar(ctx, x + w - 86 + s * 30, y + 134, 11, s < o.stars);
-    if (o.check) this.drawCheck(ctx, x + w - 30, y + 134, 12);
-    const nameLines = wrapText(ctx, levelText(lv.id).name, w - 32, 18, 'bold');
-    nameLines.slice(0, 2).forEach((l, k) => drawText(ctx, l, x + 16, y + 156 + k * 22, { size: 18, color: PAL.uiGold }));
-    if (o.unlocked) {
-      roundRect(ctx, x + 16, y + h - 48, w - 32, 36, 10);
-      ctx.fillStyle = '#3c8a2b';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      drawText(ctx, o.played ? t('levels.replay') : t('levels.play'), x + w / 2, y + h - 30, { size: 17, align: 'center' });
-      this.reg(this.overlayButtons, { x, y, w, h, onTap: o.onTap });
-    } else {
-      roundRect(ctx, x, y, w, h, 18);
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fill();
-      this.drawLock(ctx, x + w / 2, y + h / 2 - 22, 18);
-      drawText(ctx, o.lockText, x + w / 2, y + h / 2 + 22, { size: 14, align: 'center', weight: 'normal', stroke: null });
-    }
-  }
-
   /** Галочка «пройдено» в зелёном кружке. */
   private drawCheck(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
     circle(ctx, x, y, r);
@@ -903,64 +879,161 @@ export class UI {
     ctx.stroke();
   }
 
+  /**
+   * Карточка карты в сетке акта: миниатюра слева, номер и название справа, внизу звёзды и
+   * сложность, на которой карта пройдена. Тап по карточке открывает вступление карты.
+   */
   private levelCard(ctx: CanvasRenderingContext2D, lv: LevelDef, i: number, x: number, y: number, w: number, h: number): void {
     const g = this.g;
+    const unlocked = g.isUnlocked(i);
     const stars = g.starsFor(i);
+    const act = ACTS[LEVEL_ACT[i]];
+    const hover = this.g.input.hover;
+    const hot = !!hover && unlocked && hover.x >= x && hover.x <= x + w && hover.y >= y && hover.y <= y + h;
+    this.panel(ctx, x, y, w, h, 16, hot ? 'rgba(70,40,15,0.92)' : PAL.ui);
+    const mw = 150;
+    const mh = 84;
+    this.miniMap(ctx, lv, x + 10, y + 10, mw, mh);
+    const tx = x + mw + 22;
+    const tw = w - mw - 30;
+    drawText(ctx, t('levels.map', i - act.from + 1), tx, y + 22, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
+    const lines = wrapText(ctx, levelText(lv.id).name, tw, 16, 'bold').slice(0, 3);
+    lines.forEach((l, k) => drawText(ctx, l, tx, y + 46 + k * 19, { size: 16, color: PAL.uiGold }));
+    for (let s = 0; s < 3; s++) drawStar(ctx, x + 24 + s * 30, y + h - 28, 11, s < stars);
     const beaten = g.progress.beaten[lv.id];
-    const beatenLabel = beaten ? ` · ${difficultyText(beaten).name.toLowerCase()}` : '';
-    this.card(ctx, lv, x, y, w, h, {
-      header: `${t('levels.level', i + 1)}${beatenLabel}`,
-      unlocked: g.isUnlocked(i),
-      lockText: i === 0 ? t('levels.lockedTutorial') : t('levels.locked'),
-      stars,
-      played: stars > 0,
-      onTap: () => g.chooseLevel(i),
-    });
+    if (beaten) drawText(ctx, difficultyText(beaten).name.toLowerCase(), x + w - 14, y + h - 28, { size: 13, align: 'right', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
+    if (unlocked) {
+      this.reg(this.overlayButtons, { x, y, w, h, onTap: () => g.chooseLevel(i) });
+    } else {
+      roundRect(ctx, x, y, w, h, 16);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fill();
+      this.drawLock(ctx, x + w / 2, y + h / 2 - 12, 16);
+    }
+  }
+
+  /** Вкладка акта слева: кружок с цветом ландшафта, номер и название, звёзды акта или замок. */
+  private actTab(ctx: CanvasRenderingContext2D, a: number, x: number, y: number, w: number, h: number): void {
+    const g = this.g;
+    const act = ACTS[a];
+    const open = g.isActUnlocked(a);
+    const on = g.levelsAct === a;
+    this.panel(ctx, x, y, w, h, 14, on ? '#3c6a2b' : open ? PAL.ui : 'rgba(30,18,8,0.85)');
+    if (on) {
+      roundRect(ctx, x, y, w, h, 14);
+      ctx.strokeStyle = PAL.uiGold;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+    const theme = THEMES[act.theme];
+    const cx = x + 26;
+    const cy = y + h / 2;
+    circle(ctx, cx, cy, 17);
+    ctx.fillStyle = theme.grass;
+    ctx.fill();
+    ctx.save();
+    circle(ctx, cx, cy, 17);
+    ctx.clip();
+    ctx.strokeStyle = theme.dirt;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx - 18, cy + 6);
+    ctx.quadraticCurveTo(cx, cy - 10, cx + 18, cy + 4);
+    ctx.stroke();
+    ctx.restore();
+    circle(ctx, cx, cy, 17);
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    const [num, name] = actTitle(a).split(' · ');
+    drawText(ctx, num, x + 52, y + 18, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
+    // Длинные названия первых актов ужимаются по ширине вкладки, а не обрезаются.
+    const nm = name ?? '';
+    let size = 15;
+    while (size > 10 && measure(ctx, nm, size, 'bold') > w - 62) size--;
+    drawText(ctx, nm, x + 52, y + 37, { size, color: open ? PAL.uiLight : 'rgba(246,230,200,0.5)' });
+    if (open) {
+      const st = g.actStars(a);
+      drawText(ctx, `★ ${st.have}/${st.max}`, x + 52, y + 55, { size: 12, weight: 'normal', stroke: null, color: g.actDone(a) ? PAL.uiGold : 'rgba(246,230,200,0.7)' });
+      this.reg(this.overlayButtons, { x, y, w, h, onTap: () => { g.levelsAct = a; } });
+    } else {
+      this.drawLock(ctx, x + w - 22, y + h / 2, 10);
+    }
+  }
+
+  /** Боковая карточка: пролог (обучение) или испытание (бесконечная осада). */
+  private sideCard(
+    ctx: CanvasRenderingContext2D, lv: LevelDef, x: number, y: number, w: number, h: number,
+    o: { label: string; status: string; unlocked: boolean; done?: boolean; onTap: () => void },
+  ): void {
+    this.panel(ctx, x, y, w, h, 16);
+    drawText(ctx, o.label, x + w / 2, y + 18, { size: 13, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
+    this.miniMap(ctx, lv, x + 10, y + 32, w - 20, Math.round(((w - 20) * 9) / 16));
+    const lines = wrapText(ctx, levelText(lv.id).name, w - 16, 15, 'bold').slice(0, 2);
+    const ny = y + 32 + Math.round(((w - 20) * 9) / 16) + 20;
+    lines.forEach((l, k) => drawText(ctx, l, x + w / 2, ny + k * 18, { size: 15, align: 'center', color: PAL.uiGold }));
+    drawText(ctx, o.status, x + w / 2, y + h - 18, { size: 12, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
+    if (o.done) this.drawCheck(ctx, x + w - 16, y + 16, 10);
+    if (o.unlocked) this.reg(this.overlayButtons, { x, y, w, h, onTap: o.onTap });
+    else {
+      roundRect(ctx, x, y, w, h, 16);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fill();
+      this.drawLock(ctx, x + w / 2, y + h / 2, 14);
+    }
   }
 
   /**
-   * Список уровней: верхний ряд — пролог-обучение и первый акт, нижний — второй акт
-   * и бесконечная осада. Читается слева направо: учёба, кампания, испытание.
+   * Экран кампании: слева вкладки восьми актов, в центре девять карт выбранного акта, справа
+   * пролог-обучение и бесконечная осада. Следующий акт открывается звездой на каждой карте прошлого.
    */
   private drawLevels(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
     this.dim(ctx);
-    drawText(ctx, gameTitle(), 640, 34, { size: 30, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
-    const cw = 262;
-    const ch = 236;
-    const gap = 22;
-    const x0 = (LOGICAL_W - (4 * cw + 3 * gap)) / 2;
-    const col = (k: number): number => x0 + k * (cw + gap);
-    const label = (text: string, x: number, y: number): void => {
-      drawText(ctx, text, x + 4, y, { size: 15, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.85)' });
-    };
-    const rowY = [76, 366];
+    drawText(ctx, gameTitle(), 640, 30, { size: 28, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
+    this.bigButton(ctx, 1170, 30, 180, 38, t('levels.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 16);
+    // Вкладки актов.
+    const tabX = 14;
+    const tabW = 186;
+    const tabH = 64;
+    ACTS.forEach((_, a) => this.actTab(ctx, a, tabX, 62 + a * (tabH + 7), tabW, tabH));
+    // Карты акта.
+    const a = Math.min(g.levelsAct, ACTS.length - 1);
+    const act = ACTS[a];
+    const gx = 214;
+    const gy = 92;
+    const cw = 296;
+    const ch = 172;
+    const gap = 12;
+    const st = g.actStars(a);
+    drawText(ctx, actTitle(a), gx + 4, 72, { size: 19, color: PAL.uiLight });
+    drawText(ctx, `★ ${st.have}/${st.max}`, gx + 3 * cw + 2 * gap - 4, 72, { size: 16, align: 'right', color: PAL.uiGold });
+    for (let k = 0; k <= act.to - act.from; k++) {
+      const i = act.from + k;
+      this.levelCard(ctx, LEVELS[i], i, gx + (k % 3) * (cw + gap), gy + Math.floor(k / 3) * (ch + gap), cw, ch);
+    }
+    if (!g.isActUnlocked(a)) {
+      drawText(ctx, t('levels.actLocked'), gx + (3 * cw + 2 * gap) / 2, gy + (3 * ch + 2 * gap) / 2, { size: 20, align: 'center', color: PAL.uiLight, strokeWidth: 5 });
+    }
+    // Пролог и испытание.
+    const sx = gx + 3 * cw + 2 * gap + 12;
+    const sw = 1268 - sx;
     const tutDone = g.progress.tutorialDone;
-    label(t('levels.prologue'), col(0), rowY[0]);
-    this.card(ctx, TUTORIAL, col(0), rowY[0] + 14, cw, ch, {
-      header: tutDone ? `${t('levels.tutorial')} · ${t('levels.tutorialDone')}` : t('levels.tutorial'),
-      unlocked: true, lockText: '', check: tutDone, played: tutDone, onTap: () => g.chooseTutorial(),
-    });
-    ACTS.forEach((act, a) => {
-      const first = a === 0 ? 1 : 0;
-      label(actTitle(a), col(first), rowY[a]);
-      for (let k = 0; k <= act.to - act.from; k++) {
-        this.levelCard(ctx, LEVELS[act.from + k], act.from + k, col(first + k), rowY[a] + 14, cw, ch);
-      }
+    this.sideCard(ctx, TUTORIAL, sx, gy, sw, 260, {
+      label: t('levels.prologue'), status: tutDone ? t('levels.tutorialDone') : t('levels.tutorial'), unlocked: true, done: tutDone,
+      onTap: () => g.chooseTutorial(),
     });
     const best = g.endlessBest;
-    label(t('levels.challenge'), col(3), rowY[1]);
-    this.card(ctx, ENDLESS, col(3), rowY[1] + 14, cw, ch, {
-      header: best ? t('levels.record', best.wave) : t('levels.noRecord'),
-      unlocked: g.endlessUnlocked, lockText: t('levels.lockedTutorial'), played: !!best, onTap: () => g.chooseEndless(),
+    this.sideCard(ctx, ENDLESS, sx, gy + 280, sw, 260, {
+      label: t('levels.challenge'), status: best ? t('levels.record', best.wave) : g.endlessUnlocked ? t('levels.noRecord') : t('levels.lockedTutorial'),
+      unlocked: g.endlessUnlocked, onTap: () => g.chooseEndless(),
     });
     const free = freeStars(g.progress);
-    this.bigButton(ctx, 640, 680, 330, 44, t('levels.perks', free), () => g.toPerks(), free > 0 ? '#3c8a2b' : 'rgba(90,60,30,0.9)', 18);
-    this.bigButton(ctx, 1150, 34, 180, 40, t('levels.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 16);
-    drawText(ctx, t('levels.difficulty', difficultyText(g.difficulty.id).name.toLowerCase()), 300, 680, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
+    this.bigButton(ctx, 690, 684, 330, 42, t('levels.perks', free), () => g.toPerks(), free > 0 ? '#3c8a2b' : 'rgba(90,60,30,0.9)', 18);
+    drawText(ctx, t('levels.difficulty', difficultyText(g.difficulty.id).name.toLowerCase()), 16, 684, { size: 12, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
     const resetLabel = g.resetArmed ? t('levels.resetConfirm') : t('levels.reset');
-    drawText(ctx, resetLabel, 980, 680, { size: 14, align: 'center', weight: 'normal', stroke: null, color: g.resetArmed ? PAL.uiRed : 'rgba(246,230,200,0.55)' });
-    this.reg(this.overlayButtons, { x: 860, y: 662, w: 240, h: 36, onTap: () => g.resetProgressTap() });
+    drawText(ctx, resetLabel, 1050, 684, { size: 14, align: 'center', weight: 'normal', stroke: null, color: g.resetArmed ? PAL.uiRed : 'rgba(246,230,200,0.55)' });
+    this.reg(this.overlayButtons, { x: 930, y: 666, w: 240, h: 36, onTap: () => g.resetProgressTap() });
   }
 
   /** Перки за звёзды: восемь улучшений в два столбца. */
@@ -1025,7 +1098,10 @@ export class UI {
     this.dim(ctx);
     this.panel(ctx, 240, 80, 800, 570, 26);
     const lx = levelText(lv.id);
-    const head = mode === 'tutorial' ? t('intro.tutorial') : mode === 'endless' ? t('intro.endless') : t('intro.level', g.levelIndex + 1);
+    // Карта кампании: акт и номер карты в нём.
+    const actIdx = LEVEL_ACT[g.levelIndex] ?? 0;
+    const head = mode === 'tutorial' ? t('intro.tutorial') : mode === 'endless' ? t('intro.endless')
+      : `${actTitle(actIdx)} · ${t('levels.map', g.levelIndex - ACTS[actIdx].from + 1)}`;
     drawText(ctx, head, 640, 120, { size: 18, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
     drawText(ctx, lx.name, 640, 160, { size: 40, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
     const lines = wrapText(ctx, lx.story, 700, 19);
@@ -1117,11 +1193,20 @@ export class UI {
         drawStar(ctx, 640 - 70 + s * 70, 290 + bounce, 28, filled);
       }
     }
-    const finale = !won || mode !== 'campaign' ? '' : g.levelIndex === 2 ? t('end.finaleAct1') : g.levelIndex === LEVELS.length - 1 ? t('end.finaleAll') : '';
+    // Победа впервые закрыла акт: строка финала акта и какой акт открылся следом.
+    const done = won && mode === 'campaign' ? g.actCompleted : null;
+    const finale = done === null ? '' : actFinale(done) + (done + 1 < ACTS.length ? t('end.actUnlocked', actTitle(done + 1)) : '');
     const sub = won
       ? t('end.wonText', g.waves.total, g.lives, g.world.startLives, diff, finale)
       : t('end.lostText', g.waves.index, g.waves.total, diff, g.difficulty.id !== 'easy' ? t('end.easier') : '');
     body(sub, won ? 350 : 290);
+    const next = won ? g.nextLevel() : null;
+    if (next !== null) {
+      this.bigButton(ctx, 450, 500, 190, 64, t('end.back'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
+      this.bigButton(ctx, 650, 500, 190, 64, t('end.again'), () => g.start(), 'rgba(90,60,30,0.9)', 22);
+      this.bigButton(ctx, 850, 500, 190, 64, t('end.next'), () => g.chooseLevel(next));
+      return;
+    }
     this.bigButton(ctx, 520, 500, 220, 64, t('end.back'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
     this.bigButton(ctx, 770, 500, 220, 64, t('end.again'), () => g.start());
   }
