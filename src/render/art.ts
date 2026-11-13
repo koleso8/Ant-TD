@@ -10,6 +10,12 @@ import { CELL, type TowerKind } from '../game/config';
 import type { Biome, LevelTheme } from '../game/levels';
 import { PAL } from './palette';
 import { biomeBlob, biomeCluster, biomeDecor, biomeGround, biomeTuft, crossings, drawIce, drawRavine, koiStream, redBridge, ropeBridge } from './biomes';
+import { drawAnthillDesert, drawTowerAcidDesert, drawTowerBarracksDesert, drawTowerCatapultDesert, drawTowerSporeDesert } from './desert';
+import { drawAnthillForest, drawTowerAcidForest, drawTowerBarracksForest, drawTowerCatapultForest, drawTowerSporeForest } from './forest';
+import { drawAnthillMeadow, drawTowerAcidMeadow, drawTowerBarracksMeadow, drawTowerCatapultMeadow, drawTowerSporeMeadow } from './meadow';
+import { drawAnthillJungle, drawTowerAcidJungle, drawTowerBarracksJungle, drawTowerCatapultJungle, drawTowerSporeJungle } from './jungle';
+import { drawAnthillMountains, drawTowerAcidMountains, drawTowerBarracksMountains, drawTowerCatapultMountains, drawTowerSporeMountains } from './mountains';
+import { drawAnthillSnow, drawTowerAcidSnow, drawTowerBarracksSnow, drawTowerCatapultSnow, drawTowerSporeSnow } from './snow';
 
 type Ctx = CanvasRenderingContext2D;
 type Fill = string | CanvasGradient;
@@ -630,157 +636,379 @@ export function drawHealthBar(ctx: Ctx, x: number, y: number, w: number, frac: n
 
 // ───────────────────────── постройки ─────────────────────────
 
-export function drawMound(ctx: Ctx, x: number, y: number, r: number): void {
-  outline(ctx, 3);
-  ell(ctx, x, y + r * 0.12, r, r * 0.55);
-  fs(ctx, PAL.mound);
-  ctx.fillStyle = PAL.moundLight;
-  ell(ctx, x - r * 0.15, y - r * 0.02, r * 0.6, r * 0.25);
-  ctx.fill();
-}
-
 /**
- * Стиль построек по ландшафту акта: в Азии бамбук, в горах камень и т.п. Пока готов эталон —
- * бамбуковые стрелки; остальные башни и стили рисуются по-прежнему, пока эталон не утверждён.
+ * Стиль построек по ландшафту акта: в Азии бамбук и пагоды, в Пустыне глина Сахеля и касбы
+ * (src/render/desert.ts), в Горах гранит и альпийские шале (src/render/mountains.ts), в Джунглях
+ * сейба, ротанг, солома и руины (src/render/jungle.ts), в Снегах лёд, шкуры и чум (src/render/snow.ts),
+ * в Лесу срубы, тёс, резьба и частокол (src/render/forest.ts); акты 1–2, плац и бесконечная осада —
+ * родной луг: веточки, жёлуди, листья и мухоморы в масштабе муравьёв (src/render/meadow.ts).
  */
 let towerStyle: Biome | null = null;
 export function setTowerStyle(style: Biome | null): void {
   towerStyle = style;
 }
 
-/** Соломенная шляпа-каса на голове муравья (вид сверху): круг с лучами плетения. */
+/** Соломенная шляпа-каса (вид сверху): конус с бликом слева сверху, кольца и лучи плетения. */
 function kasa(ctx: Ctx, x: number, y: number, r: number): void {
-  drawShadow(ctx, x + 1.5, y + 2, r, r * 0.8, 0.22);
+  drawShadow(ctx, x + 2, y + 2.5, r, r * 0.8, 0.25);
+  const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.1, x, y, r);
+  g.addColorStop(0, '#f8e0a0');
+  g.addColorStop(0.6, '#e0b86a');
+  g.addColorStop(1, '#b4833c');
   outline(ctx, 1.8);
   circle(ctx, x, y, r);
-  fs(ctx, '#e3bf72');
-  ctx.strokeStyle = 'rgba(150,105,40,0.7)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * TAU;
-    ctx.beginPath();
-    ctx.moveTo(x + Math.cos(a) * r * 0.2, y + Math.sin(a) * r * 0.2);
-    ctx.lineTo(x + Math.cos(a) * r * 0.92, y + Math.sin(a) * r * 0.92);
+  fs(ctx, g);
+  ctx.strokeStyle = 'rgba(125,80,28,0.5)';
+  ctx.lineWidth = 0.9;
+  for (const k of [0.45, 0.72]) {
+    circle(ctx, x, y, r * k);
     ctx.stroke();
   }
-  ctx.fillStyle = '#c99a4a';
-  circle(ctx, x, y, r * 0.22);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * TAU;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(a) * r * 0.18, y + Math.sin(a) * r * 0.18);
+    ctx.lineTo(x + Math.cos(a) * r * 0.95, y + Math.sin(a) * r * 0.95);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#9a6a2c';
+  circle(ctx, x, y, r * 0.16);
   ctx.fill();
 }
 
-/** Бумажный фонарь: красный шар с золотыми крышками и тёплым светом. */
+/** Бумажный фонарь: рёбра, золотые крышки, кисточка снизу и тёплое свечение. */
 function paperLantern(ctx: Ctx, x: number, y: number): void {
-  const g = ctx.createRadialGradient(x, y, 1, x, y, 16);
-  g.addColorStop(0, 'rgba(255,200,90,0.5)');
-  g.addColorStop(1, 'rgba(255,200,90,0)');
-  ctx.fillStyle = g;
-  circle(ctx, x, y, 16);
+  const glow = ctx.createRadialGradient(x, y, 1, x, y, 20);
+  glow.addColorStop(0, 'rgba(255,205,100,0.55)');
+  glow.addColorStop(1, 'rgba(255,205,100,0)');
+  ctx.fillStyle = glow;
+  circle(ctx, x, y, 20);
   ctx.fill();
+  outline(ctx, 1.2);
+  ctx.beginPath(); ctx.moveTo(x, y + 9); ctx.lineTo(x, y + 15); ctx.stroke();
+  ctx.strokeStyle = '#f2c94c';
+  ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(x, y + 11); ctx.lineTo(x, y + 17); ctx.stroke();
+  const body = ctx.createRadialGradient(x - 2, y - 3, 1, x, y, 9);
+  body.addColorStop(0, '#ff9a6a');
+  body.addColorStop(0.55, '#e0503a');
+  body.addColorStop(1, '#a52c1c');
   outline(ctx, 2);
-  ell(ctx, x, y, 6.5, 8);
-  fs(ctx, '#d8452f');
-  ctx.strokeStyle = 'rgba(120,30,10,0.5)';
-  ctx.lineWidth = 1;
-  for (const k of [-0.5, 0, 0.5]) { ell(ctx, x, y, 6.5 * Math.cos(k), 8); ctx.stroke(); }
-  outline(ctx, 1.6);
-  ctx.beginPath(); ctx.rect(x - 3.5, y - 10, 7, 3); fs(ctx, '#f2c94c');
-  ctx.beginPath(); ctx.rect(x - 3.5, y + 7, 7, 3); fs(ctx, '#f2c94c');
+  ell(ctx, x, y, 7, 8.5);
+  fs(ctx, body);
+  ctx.strokeStyle = 'rgba(110,25,10,0.55)';
+  ctx.lineWidth = 0.9;
+  for (const k of [-0.62, -0.25, 0.25, 0.62]) {
+    ell(ctx, x, y, 7 * Math.abs(k), 8.5);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,240,200,0.35)';
+  ell(ctx, x - 2.5, y - 3, 1.6, 3.5, 0.2);
+  ctx.fill();
+  outline(ctx, 1.5);
+  ctx.beginPath(); ctx.rect(x - 4, y - 11, 8, 3.2); fs(ctx, '#f2c94c');
+  ctx.beginPath(); ctx.rect(x - 4, y + 7.8, 8, 3.2); fs(ctx, '#f2c94c');
+}
+
+interface BambooTone { dark: string; base: string; light: string; node: string }
+const BAMBOO: Readonly<Record<'front' | 'mid' | 'back' | 'aged', BambooTone>> = {
+  front: { dark: '#4c7a20', base: '#8cc043', light: '#d2ec8e', node: '#3d621a' },
+  mid: { dark: '#436c1d', base: '#79ad39', light: '#b8db76', node: '#365a17' },
+  back: { dark: '#365818', base: '#62912f', light: '#94bf5c', node: '#2a4612' },
+  aged: { dark: '#78722a', base: '#bdb15a', light: '#ebe1a0', node: '#625c1e' },
+};
+
+/**
+ * Стебель бамбука: цилиндр с тенью по краям и бликом, узлы с ободком, косой срез сверху
+ * (cut — насколько правый край выше левого); в срезе может стоять светящаяся кислота.
+ */
+function bambooStalk(ctx: Ctx, sx: number, bottom: number, top: number, w: number, tone: BambooTone, cut: number, acid: boolean, nodeShift: number): void {
+  const half = w / 2;
+  ctx.beginPath();
+  ctx.moveTo(sx - half, bottom);
+  ctx.lineTo(sx - half, top + cut);
+  ctx.lineTo(sx + half, top - cut);
+  ctx.lineTo(sx + half, bottom);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(sx - half, 0, sx + half, 0);
+  g.addColorStop(0, tone.dark);
+  g.addColorStop(0.3, tone.base);
+  g.addColorStop(0.42, tone.light);
+  g.addColorStop(0.6, tone.base);
+  g.addColorStop(1, tone.dark);
+  outline(ctx, 2);
+  fs(ctx, g);
+  ctx.lineCap = 'butt';
+  for (let ny = bottom - 6 - nodeShift; ny > top + Math.abs(cut) + 5; ny -= 13) {
+    ctx.strokeStyle = tone.node;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(sx - half - 0.8, ny); ctx.lineTo(sx + half + 0.8, ny); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,215,0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx - half + 1.2, ny - 1.7); ctx.lineTo(sx + half - 1.2, ny - 1.7); ctx.stroke();
+  }
+  ctx.lineCap = 'round';
+  // Срез: светлая древесина по краю, внутри полость или кислота.
+  const a = Math.atan2(-2 * cut, w);
+  const len = Math.hypot(w, 2 * cut) / 2;
+  if (acid) {
+    const glow = ctx.createRadialGradient(sx, top, 0, sx, top, 10);
+    glow.addColorStop(0, 'rgba(150,255,90,0.55)');
+    glow.addColorStop(1, 'rgba(150,255,90,0)');
+    ctx.fillStyle = glow;
+    circle(ctx, sx, top, 10);
+    ctx.fill();
+  }
+  outline(ctx, 1.4);
+  ell(ctx, sx, top, len, 2.2, a);
+  fs(ctx, '#f0e6b8');
+  ctx.fillStyle = acid ? '#8cf04e' : '#5d6b2c';
+  ell(ctx, sx + 0.3, top + 0.3, len * 0.62, 1.2, a);
+  ctx.fill();
+  if (acid) {
+    ctx.fillStyle = 'rgba(240,255,210,0.85)';
+    circle(ctx, sx - len * 0.25, top - 0.2, 0.8);
+    ctx.fill();
+  }
+}
+
+/** Речной камень у подножия: тень снизу, блик сверху слева. */
+function riverStone(ctx: Ctx, x: number, y: number, rx: number, ry: number, col: string): void {
+  outline(ctx, 2);
+  ell(ctx, x, y, rx, ry);
+  fs(ctx, col);
+  ctx.fillStyle = 'rgba(30,25,15,0.2)';
+  ell(ctx, x + rx * 0.08, y + ry * 0.38, rx * 0.82, ry * 0.5);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ell(ctx, x - rx * 0.32, y - ry * 0.38, rx * 0.38, ry * 0.24, -0.2);
+  ctx.fill();
+}
+
+/** Витая верёвка вокруг связки (по дуге цилиндра) с узлом и свисающими концами. */
+function lashing(ctx: Ctx, x: number, rw: number, by: number): void {
+  const sag = 5;
+  const at = (t: number): Vec => {
+    const u = 1 - t;
+    return { x: u * u * (x - rw) + 2 * u * t * x + t * t * (x + rw), y: u * u * by + 2 * u * t * (by + sag) + t * t * by };
+  };
+  const curve = (dy: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(x - rw, by + dy);
+    ctx.quadraticCurveTo(x, by + sag + dy, x + rw, by + dy);
+  };
+  ctx.strokeStyle = 'rgba(20,30,5,0.35)';
+  ctx.lineWidth = 3;
+  curve(3.5);
+  ctx.stroke();
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 6.5;
+  curve(0);
+  ctx.stroke();
+  ctx.strokeStyle = '#dcc38a';
+  ctx.lineWidth = 4.2;
+  curve(0);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(115,80,30,0.8)';
+  ctx.lineWidth = 1.1;
+  for (let i = 1; i < 16; i++) {
+    const p = at(i / 16);
+    ctx.beginPath(); ctx.moveTo(p.x - 1.4, p.y - 1.9); ctx.lineTo(p.x + 1.4, p.y + 1.9); ctx.stroke();
+  }
+  const k = at(0.64);
+  outline(ctx, 1.4);
+  ctx.beginPath(); ctx.moveTo(k.x - 1, k.y + 2); ctx.quadraticCurveTo(k.x - 3, k.y + 6, k.x - 2, k.y + 9); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(k.x + 1, k.y + 2); ctx.quadraticCurveTo(k.x + 3, k.y + 5, k.x + 3.5, k.y + 8); ctx.stroke();
+  ctx.strokeStyle = '#dcc38a';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(k.x - 1, k.y + 2); ctx.quadraticCurveTo(k.x - 3, k.y + 6, k.x - 2, k.y + 9); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(k.x + 1, k.y + 2); ctx.quadraticCurveTo(k.x + 3, k.y + 5, k.x + 3.5, k.y + 8); ctx.stroke();
+  outline(ctx, 1.5);
+  circle(ctx, k.x, k.y, 2.8);
+  fs(ctx, '#e8d29a');
+}
+
+/** Веточка бамбука: три узких листа веером. dir = 1 вправо, −1 влево. */
+function bambooSprig(ctx: Ctx, x: number, y: number, dir: number): void {
+  ctx.strokeStyle = '#3d621a';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dir * 6, y - 3); ctx.stroke();
+  for (const [da, len] of [[-0.55, 12], [0, 14], [0.5, 11]] as const) {
+    const a = (dir > 0 ? 0 : Math.PI) + dir * (-0.35 + da);
+    leaf(ctx, x + dir * 6 + Math.cos(a) * len * 0.5, y - 3 + Math.sin(a) * len * 0.5, len * 0.5, 2.2, a, '#79b53c', '#3d621a');
+  }
+}
+
+/** Знамя-нобори на бамбуковом шесте: волнистый низ, белая кайма, золотой герб с муравьём. */
+function nobori(ctx: Ctx, px: number, ground: number, topY: number): void {
+  bambooStalk(ctx, px, ground, topY, 4.5, BAMBOO.mid, 0, false, 3);
+  const x0 = px - 15;
+  const x1 = px - 2.5;
+  const y0 = topY + 4;
+  const y1 = topY + 34;
+  outline(ctx, 2);
+  ctx.beginPath(); ctx.moveTo(px + 1, y0 - 1); ctx.lineTo(x0 - 2, y0 - 1); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x1, y0);
+  ctx.lineTo(x1, y1);
+  ctx.quadraticCurveTo(x1 - 3, y1 - 3, (x0 + x1) / 2, y1);
+  ctx.quadraticCurveTo(x0 + 3, y1 + 3, x0, y1 - 1);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(x0, 0, x1, 0);
+  g.addColorStop(0, '#a8301e');
+  g.addColorStop(0.45, '#de4e36');
+  g.addColorStop(1, '#b53924');
+  fs(ctx, g);
+  ctx.fillStyle = '#f4ead2';
+  ctx.fillRect(x0 + 1, y0 + 1, x1 - x0 - 2, 3);
+  const cx = (x0 + x1) / 2;
+  const cy = y0 + 14;
+  outline(ctx, 1.4);
+  circle(ctx, cx, cy, 4.4);
+  fs(ctx, '#f2c94c');
+  // Герб: голова муравья с усиками.
+  ctx.fillStyle = '#8a2a18';
+  circle(ctx, cx, cy + 0.8, 1.9);
+  ctx.fill();
+  ctx.strokeStyle = '#8a2a18';
+  ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(cx - 0.8, cy - 0.6); ctx.quadraticCurveTo(cx - 2, cy - 3, cx - 3.2, cy - 2.6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx + 0.8, cy - 0.6); ctx.quadraticCurveTo(cx + 2, cy - 3, cx + 3.2, cy - 2.6); ctx.stroke();
 }
 
 /**
- * Бамбуковые стрелки (Азия): связка стеблей бамбука на каменном основании, плетёный настил,
- * на нём муравьи в соломенных шляпах. 2-й уровень — красное знамя-нобори, 3-й — бумажный фонарь.
+ * Бамбуковые стрелки (Азия): связка объёмных стеблей на речных камнях, витые обвязки, настил из
+ * расщеплённого бамбука в обруче, позади частокол высоких срезов с кислотой; стрелки в шляпах-каса.
+ * 2-й уровень — знамя-нобори с гербом, 3-й — бумажный фонарь на изогнутом стебле.
  * Специализации: снайперы — высокий шест с вымпелом, залп — широкий настил и четверо стрелков.
  */
 function drawTowerAcidBamboo(ctx: Ctx, x: number, y: number, level: number, angle: number, recoil: number, variant: number): void {
-  drawShadow(ctx, x, y + 10, 38, 14);
   const lv = Math.min(level, 3);
-  const h = 32 + lv * 8 + (level >= 4 ? 6 : 0);
-  const rw = 17 + lv + (variant === 2 ? 6 : 0);
+  const h = 34 + lv * 8 + (level >= 4 ? 6 : 0);
+  const rw = 17 + lv + (variant === 2 ? 5 : 0);
+  const dr = rw + 8;
   const top = y - h;
-  // Каменное основание.
-  outline(ctx, 2.5);
-  ell(ctx, x, y + 2, rw + 12, 11);
-  fs(ctx, '#9d998f');
-  ctx.fillStyle = 'rgba(255,255,255,0.25)';
-  ell(ctx, x - 8, y - 1, rw * 0.6, 4);
+  drawShadow(ctx, x + 3, y + 8, dr + 14, 15);
+  // Камни у подножия: задние за связкой, передние поверх.
+  const stones: ReadonlyArray<readonly [number, number, number, string]> = [
+    [-1.0, 7.5, 5, '#a7a294'], [-0.55, 6.5, 4.5, '#968f80'], [0.55, 7, 4.8, '#b3ad9e'], [1.0, 6.5, 4.6, '#9c9586'],
+    [-0.85, 8.5, 6, '#b5b0a2'], [-0.3, 7.5, 5.2, '#a19b8c'], [0.25, 8.5, 6, '#aea898'], [0.8, 7.5, 5.4, '#9a9384'],
+  ];
+  stones.slice(0, 4).forEach(([k, rx, ry, col]) => riverStone(ctx, x + k * (rw + 4), y - 3, rx, ry, col));
+  ctx.fillStyle = 'rgba(30,40,15,0.45)';
+  ell(ctx, x, y + 1, rw + 3, 7);
   ctx.fill();
-  // Стебли: задний ряд выше, у каждого узлы.
+  // Связка: края дальше от зрителя и рисуются первыми, середина ближе и ниже.
   const n = 5 + Math.min(lv - 1, 2) + (variant === 2 ? 1 : 0);
-  const stalk = (sx: number, sTop: number, col: string): void => {
-    outline(ctx, 2.2);
-    ctx.beginPath();
-    ctx.rect(sx - 3.6, sTop, 7.2, y - sTop);
-    fs(ctx, col);
-    ctx.fillStyle = 'rgba(255,255,255,0.28)';
-    ctx.fillRect(sx - 2.4, sTop + 2, 1.6, y - sTop - 4);
-    ctx.strokeStyle = '#4f7a24';
-    ctx.lineWidth = 1.6;
-    for (let ny = y - 10; ny > sTop + 4; ny -= 12) {
-      ctx.beginPath(); ctx.moveTo(sx - 3.6, ny); ctx.lineTo(sx + 3.6, ny); ctx.stroke();
-    }
-    outline(ctx, 1.6);
-    ell(ctx, sx, sTop, 3.6, 1.6);
-    fs(ctx, '#e9e2b8');
-  };
-  for (let i = 0; i < n; i++) {
-    const sx = x - rw + 3 + (i * (2 * rw - 6)) / (n - 1);
-    stalk(sx, top - (i % 2 ? 0 : 5), i % 2 ? '#8fbf4a' : '#a3cd58');
+  const sw = (2 * rw) / n + 1.6;
+  const order = [...Array(n).keys()].sort((a, b) => Math.abs(b - (n - 1) / 2) - Math.abs(a - (n - 1) / 2));
+  for (const i of order) {
+    const sx = x - rw + sw / 2 - 0.8 + (i * (2 * rw - sw + 1.6)) / (n - 1);
+    const k = (sx - x) / rw;
+    const bottom = y + 5 * Math.sqrt(Math.max(0, 1 - k * k));
+    const tone = i === 1 ? BAMBOO.aged : i % 2 ? BAMBOO.mid : BAMBOO.front;
+    bambooStalk(ctx, sx, bottom, top + 4, sw, tone, 0, false, (i * 5) % 9);
   }
-  // Верёвочные обвязки.
-  for (const k of [0.3, 0.68]) {
-    const by = y - h * k;
-    outline(ctx, 2);
-    ctx.beginPath();
-    ctx.rect(x - rw - 1, by - 2.5, 2 * rw + 2, 5);
-    fs(ctx, '#d8c08a');
-    ctx.strokeStyle = 'rgba(120,90,40,0.6)';
-    ctx.lineWidth = 1;
-    for (let rx = x - rw; rx < x + rw; rx += 5) { ctx.beginPath(); ctx.moveTo(rx, by - 2.5); ctx.lineTo(rx + 3, by + 2.5); ctx.stroke(); }
-  }
-  // Плетёный настил наверху.
+  // Тень под настилом и затенение у земли.
+  let g = ctx.createLinearGradient(0, top + 4, 0, top + 16);
+  g.addColorStop(0, 'rgba(15,25,0,0.45)');
+  g.addColorStop(1, 'rgba(15,25,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(x - rw - 1, top + 4, 2 * rw + 2, 12);
+  g = ctx.createLinearGradient(0, y - 14, 0, y + 5);
+  g.addColorStop(0, 'rgba(15,25,0,0)');
+  g.addColorStop(1, 'rgba(15,25,0,0.4)');
+  ctx.fillStyle = g;
+  ctx.fillRect(x - rw - 1, y - 14, 2 * rw + 2, 19);
+  bambooSprig(ctx, x - rw + 1, y - h * 0.42, -1);
+  if (lv >= 2) bambooSprig(ctx, x + rw - 1, y - h * 0.62, 1);
+  const bands = lv >= 3 ? [0.22, 0.5, 0.78] : [0.3, 0.7];
+  for (const b of bands) lashing(ctx, x, rw + 1, y - h * b);
+  stones.slice(4).forEach(([k, rx, ry, col]) => riverStone(ctx, x + k * (rw + 6), y + 6 - Math.abs(k) * 3, rx, ry, col));
+  // Настил: толщина снизу, расщеплённый бамбук сверху, зелёный обруч по краю.
   outline(ctx, 2.5);
-  ell(ctx, x, top, rw + 6, 8.5);
-  fs(ctx, '#d9b98a');
+  ell(ctx, x, top + 4, dr, 9);
+  fs(ctx, '#74501f');
+  ell(ctx, x, top, dr, 9);
+  g = ctx.createRadialGradient(x - dr * 0.3, top - 3, 2, x, top, dr);
+  g.addColorStop(0, '#efd7a0');
+  g.addColorStop(0.65, '#cfa462');
+  g.addColorStop(1, '#a87b3f');
+  fs(ctx, g, false);
   ctx.save();
-  ell(ctx, x, top, rw + 6, 8.5);
+  ell(ctx, x, top, dr, 9);
   ctx.clip();
-  ctx.strokeStyle = 'rgba(140,100,50,0.55)';
-  ctx.lineWidth = 1.2;
-  for (let k = -rw - 6; k < rw + 6; k += 5) {
-    ctx.beginPath(); ctx.moveTo(x + k, top - 9); ctx.lineTo(x + k + 8, top + 9); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x + k + 8, top - 9); ctx.lineTo(x + k, top + 9); ctx.stroke();
+  ctx.strokeStyle = 'rgba(110,70,25,0.35)';
+  ctx.lineWidth = 1;
+  for (let k = -9; k <= 9; k += 3.2) {
+    ctx.beginPath(); ctx.moveTo(x - dr, top + k); ctx.lineTo(x + dr, top + k); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(110,70,25,0.55)';
+  ctx.lineWidth = 2;
+  for (const k of [-0.5, 0.5]) {
+    ctx.beginPath(); ctx.moveTo(x + k * dr, top - 10); ctx.lineTo(x + k * dr, top + 10); ctx.stroke();
   }
   ctx.restore();
-  // 2-й уровень: красное знамя на бамбуковом шесте справа.
-  if (level >= 2 && variant !== 1) {
-    const px = x + rw + 6;
-    twig(ctx, px, y - 4, px, top - 34, 3);
-    outline(ctx, 2);
-    ctx.beginPath(); ctx.rect(px - 13, top - 32, 11, 26); fs(ctx, '#c8452f');
-    circle(ctx, px - 7.5, top - 21, 3.2);
-    fs(ctx, '#f2c94c');
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 5.5;
+  ell(ctx, x, top, dr, 9);
+  ctx.stroke();
+  ctx.strokeStyle = '#86bb40';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(240,255,200,0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(x, top - 0.8, dr, 9, 0, Math.PI * 1.05, Math.PI * 1.55);
+  ctx.stroke();
+  // Частокол позади: высокие срезы, в некоторых светится кислота.
+  const posts = 2 + lv;
+  for (let i = 0; i < posts; i++) {
+    const th = Math.PI * 1.18 + ((Math.PI * 0.64) * i) / (posts - 1);
+    const px = x + Math.cos(th) * dr * 0.8;
+    const py = top + Math.sin(th) * 9 * 0.8 + 1;
+    const tall = 11 + ((i * 7) % 3) * 4 + (i === Math.floor(posts / 2) ? 4 : 0);
+    const acid = i % 2 === 1 || (lv >= 3 && i === 0);
+    bambooStalk(ctx, px, py, py - tall, 6, i % 2 ? BAMBOO.back : BAMBOO.mid, i % 2 ? 2.4 : -2.4, acid, 2);
+    if (acid && lv >= 2) {
+      ctx.strokeStyle = 'rgba(140,240,80,0.85)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(px + 1, py - tall + 2); ctx.lineTo(px + 1, py - tall + 7); ctx.stroke();
+      ctx.fillStyle = '#8cf04e';
+      circle(ctx, px + 1, py - tall + 8, 1.3);
+      ctx.fill();
+    }
   }
-  // 3-й уровень: бумажный фонарь на изогнутом шесте слева.
+  // 2-й уровень: знамя-нобори справа.
+  if (level >= 2 && variant !== 1) nobori(ctx, x + dr + 4, y + 2, top - 30);
+  // 3-й уровень: фонарь на изогнутом стебле слева, в пределах своей клетки.
   if (level >= 3 && variant !== 1) {
+    const ex = x - dr - 3;
+    const ey = top - 16;
     ctx.strokeStyle = OUT;
-    ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.moveTo(x - rw + 2, top + 6); ctx.quadraticCurveTo(x - rw - 10, top - 18, x - rw - 16, top - 14); ctx.stroke();
-    ctx.strokeStyle = '#8fbf4a';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(x - dr * 0.55, top - 4); ctx.quadraticCurveTo(x - dr * 0.7, top - 24, ex, ey); ctx.stroke();
+    ctx.strokeStyle = '#86bb40';
+    ctx.lineWidth = 3.6;
     ctx.stroke();
-    paperLantern(ctx, x - rw - 16, top - 2);
+    ctx.strokeStyle = 'rgba(240,255,200,0.55)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    outline(ctx, 1.2);
+    ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex, ey + 6); ctx.stroke();
+    paperLantern(ctx, ex, ey + 16);
   }
   // Снайперы: высокий шест с вымпелом за стрелком.
   if (variant === 1) {
-    twig(ctx, x + 6, top + 2, x + 6, top - 46, 3);
-    pennant(ctx, x + 6, top - 46, 24, 13, '#c8452f');
-    paperLantern(ctx, x - rw - 6, top + 10);
+    bambooStalk(ctx, x + 8, top + 2, top - 46, 4.5, BAMBOO.mid, 0, false, 4);
+    pennant(ctx, x + 8, top - 44, 24, 13, '#c8452f');
+    paperLantern(ctx, x - dr - 6, top + 12);
   }
   const offs: ReadonlyArray<readonly [number, number]> =
     variant === 1 ? [[0, -1]]
-      : variant === 2 ? [[-14, -3], [-5, 0], [5, 0], [14, -3]]
-        : level === 1 ? [[0, -1]] : level === 2 ? [[-7, 0], [7, -2]] : [[-9, -2], [0, 1], [9, -3]];
+      : variant === 2 ? [[-14, -2], [-5, 1], [5, 1], [14, -2]]
+        : level === 1 ? [[0, 0]] : level === 2 ? [[-8, 1], [8, -1]] : [[-10, 0], [0, 2], [10, -1]];
   const as = variant === 1 ? 0.78 : 0.6;
   const rx = Math.cos(angle) * recoil * 3;
   const ry = Math.sin(angle) * recoil * 3;
@@ -798,161 +1026,83 @@ export function drawTowerAcid(ctx: Ctx, x: number, y: number, level: number, ang
     drawTowerAcidBamboo(ctx, x, y, level, angle, recoil, variant);
     return;
   }
-  drawShadow(ctx, x, y + 10, 36, 14);
-  drawMound(ctx, x, y, 32);
-  const h = 30 + Math.min(level, 3) * 7 + (level >= 4 ? 4 : 0);
-  const rw = 17 + Math.min(level, 3) + (variant === 2 ? 5 : 0);
-  const top = y - h;
-  outline(ctx, 3);
-  ctx.beginPath();
-  ctx.moveTo(x - rw, y);
-  ctx.lineTo(x - rw + 1.5, top);
-  ctx.lineTo(x + rw - 1.5, top);
-  ctx.lineTo(x + rw, y);
-  ctx.closePath();
-  fs(ctx, PAL.twig);
-  ctx.strokeStyle = 'rgba(40,20,5,0.35)';
-  ctx.lineWidth = 2;
-  for (const k of [-0.55, -0.15, 0.3]) {
-    ctx.beginPath(); ctx.moveTo(x + k * rw, y - 4); ctx.lineTo(x + k * rw + 1, top + 6); ctx.stroke();
+  if (towerStyle === 'desert') {
+    drawTowerAcidDesert(ctx, x, y, level, angle, recoil, variant);
+    return;
   }
-  ctx.fillStyle = PAL.twigLight;
-  ctx.fillRect(x - rw * 0.75, top + 6, 3.5, h - 12);
-  outline(ctx, 3);
-  ctx.beginPath();
-  ctx.ellipse(x, y, rw, 7, 0, 0, Math.PI);
-  fs(ctx, PAL.moundDark);
-  ell(ctx, x, top, rw, 7.5);
-  fs(ctx, '#d9b27a');
-  ctx.strokeStyle = '#b08a55';
-  ctx.lineWidth = 1.5;
-  ell(ctx, x, top, rw * 0.65, 4.5);
-  ctx.stroke();
-  ell(ctx, x, top, rw * 0.3, 2);
-  ctx.stroke();
-  if (level >= 2) {
-    twig(ctx, x + rw - 4, top + 4, x + rw + 10, top - 26, 3);
-    leaf(ctx, x + rw + 12, top - 30, 20, 8, -0.5);
+  if (towerStyle === 'mountains') {
+    drawTowerAcidMountains(ctx, x, y, level, angle, recoil, variant);
+    return;
   }
-  if (level >= 3) {
-    twig(ctx, x - rw + 4, top + 4, x - rw - 8, top - 22, 3);
-    leaf(ctx, x - rw - 10, top - 26, 17, 7, 0.5);
+  if (towerStyle === 'jungle') {
+    drawTowerAcidJungle(ctx, x, y, level, angle, recoil, variant);
+    return;
   }
-  if (variant === 1) {
-    twig(ctx, x, top + 2, x - 3, top - 36, 3);
-    pennant(ctx, x - 3, top - 36, 20, 12, PAL.honey);
+  if (towerStyle === 'snow') {
+    drawTowerAcidSnow(ctx, x, y, level, angle, recoil, variant);
+    return;
   }
-  const offs: ReadonlyArray<readonly [number, number]> =
-    variant === 1 ? [[0, -1]]
-      : variant === 2 ? [[-13, -3], [-4, 0], [4, 0], [13, -3]]
-        : level === 1 ? [[0, -1]] : level === 2 ? [[-7, 0], [7, -2]] : [[-9, -2], [0, 1], [9, -3]];
-  const as = variant === 1 ? 0.78 : 0.6;
-  const rx = Math.cos(angle) * recoil * 3;
-  const ry = Math.sin(angle) * recoil * 3;
-  for (const [ox, oy] of offs) drawAnt(ctx, x + ox - rx, top + oy - ry, angle, as, ANT_WORKER, 0, false);
+  if (towerStyle === 'forest') {
+    drawTowerAcidForest(ctx, x, y, level, angle, recoil, variant);
+    return;
+  }
+  drawTowerAcidMeadow(ctx, x, y, level, angle, recoil, variant);
 }
 
 export function drawTowerBarracks(ctx: Ctx, x: number, y: number, level: number, variant = 0): void {
-  drawShadow(ctx, x, y + 12, 44, 16);
-  outline(ctx, 3);
-  const lv = Math.min(level, 3);
-  const rx = 36 + lv * 2;
-  const ryTop = 32 + lv * 3;
-  const ryBase = 15;
-  ctx.beginPath();
-  ctx.ellipse(x, y + 4, rx, ryTop, 0, Math.PI, TAU);
-  ctx.ellipse(x, y + 4, rx, ryBase, 0, 0, Math.PI);
-  ctx.closePath();
-  const g = ctx.createLinearGradient(0, y - ryTop, 0, y + 20);
-  g.addColorStop(0, PAL.moundLight);
-  g.addColorStop(1, PAL.moundDark);
-  fs(ctx, g);
-  ctx.fillStyle = 'rgba(255,255,255,0.18)';
-  ell(ctx, x - 12, y - 16, 12, 7, -0.3);
-  ctx.fill();
-  if (level >= 2) {
-    for (let i = 0; i <= 8; i++) {
-      const a = (i / 8) * Math.PI;
-      pebble(ctx, x + Math.cos(a) * rx * 0.95, y + 4 + Math.sin(a) * ryBase * 0.95, 4.5, 3.2);
-    }
+  if (towerStyle === 'asia') {
+    drawTowerBarracksAsia(ctx, x, y, level, variant);
+    return;
   }
-  outline(ctx, 2.5);
-  ell(ctx, x, y + 4, 12, 9);
-  fs(ctx, '#3a2412');
-  ctx.fillStyle = '#120803';
-  ell(ctx, x, y + 2, 8, 5);
-  ctx.fill();
-  if (variant === 1) {
-    outline(ctx, 2.5);
-    ell(ctx, x - 15, y - 12, 9, 11);
-    fs(ctx, PAL.stone);
-    ctx.fillStyle = PAL.stoneLight;
-    ell(ctx, x - 17, y - 15, 4, 5);
-    ctx.fill();
+  if (towerStyle === 'desert') {
+    drawTowerBarracksDesert(ctx, x, y, level, variant);
+    return;
   }
-  if (variant === 2) {
-    twig(ctx, x - 22, y - 30, x + 8, y - 62, 3);
-    twig(ctx, x + 4, y - 30, x - 26, y - 62, 3);
-    ctx.fillStyle = OUT;
-    ctx.beginPath(); ctx.moveTo(x + 6, y - 60); ctx.lineTo(x + 14, y - 70); ctx.lineTo(x + 11, y - 58); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(x - 24, y - 60); ctx.lineTo(x - 32, y - 70); ctx.lineTo(x - 29, y - 58); ctx.closePath(); ctx.fill();
+  if (towerStyle === 'mountains') {
+    drawTowerBarracksMountains(ctx, x, y, level, variant);
+    return;
   }
-  const fx = x + 18;
-  const fy = y - ryTop + 12;
-  twig(ctx, fx, fy, fx, fy - 34 - lv * 6, 3.5);
-  pennant(ctx, fx, fy - 34 - lv * 6, 26, 14, variant === 2 ? PAL.honey : PAL.flag);
-  if (level >= 3) pennant(ctx, fx, fy - 16 - lv * 6, 20, 11, variant === 1 ? PAL.stoneLight : PAL.honey);
+  if (towerStyle === 'jungle') {
+    drawTowerBarracksJungle(ctx, x, y, level, variant);
+    return;
+  }
+  if (towerStyle === 'snow') {
+    drawTowerBarracksSnow(ctx, x, y, level, variant);
+    return;
+  }
+  if (towerStyle === 'forest') {
+    drawTowerBarracksForest(ctx, x, y, level, variant);
+    return;
+  }
+  drawTowerBarracksMeadow(ctx, x, y, level, variant);
 }
 
 export function drawTowerCatapult(ctx: Ctx, x: number, y: number, level: number, angle: number, armPhase: number, variant = 0): void {
-  drawShadow(ctx, x, y + 10, 38, 14);
-  drawMound(ctx, x, y, 32);
-  outline(ctx, 3);
-  ell(ctx, x, y - 6, variant === 1 ? 34 : 28, variant === 1 ? 16 : 13);
-  fs(ctx, PAL.stone);
-  ctx.fillStyle = PAL.stoneLight;
-  ell(ctx, x - 8, y - 10, 12, 4);
-  ctx.fill();
-  ctx.save();
-  ctx.translate(x, y - 12);
-  ctx.rotate(angle);
-  twig(ctx, -14, -10, 14, -10, 3.5);
-  twig(ctx, -14, 10, 14, 10, 3.5);
-  twig(ctx, -14, -10, -14, 10, 3.5);
-  twig(ctx, 14, -10, 14, 10, 3.5);
-  if (level >= 2) {
-    ctx.strokeStyle = PAL.honeyDark;
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(-13 + i * 3, 0, 4 - i * 0.6, 0, TAU); ctx.stroke(); }
+  if (towerStyle === 'asia') {
+    drawTowerCatapultAsia(ctx, x, y, level, angle, armPhase, variant);
+    return;
   }
-  const len = 30 + Math.min(level, 3) * 5 + (variant === 1 ? 6 : 0);
-  const p = armPhase;
-  const tx = -len * Math.cos(p * Math.PI);
-  const ty = -len * 0.25 * Math.sin(p * Math.PI);
-  twig(ctx, 0, 0, tx, ty, variant === 1 ? 6 : 5);
-  outline(ctx, 2.5);
-  ell(ctx, tx, ty, variant === 2 ? 13 : 9, variant === 2 ? 8 : 6);
-  fs(ctx, PAL.leaf);
-  if (p < 0.5) {
-    if (variant === 1) {
-      circle(ctx, tx, ty, 7.5);
-      fs(ctx, PAL.stone);
-      ctx.fillStyle = PAL.stoneLight;
-      circle(ctx, tx - 2.5, ty - 2.5, 2.5);
-      ctx.fill();
-    } else {
-      circle(ctx, tx, ty, 5);
-      fs(ctx, '#8b5a2b');
-      if (level >= 3) { circle(ctx, tx + 5, ty - 3, 3.5); fs(ctx, '#8b5a2b'); }
-      if (variant === 2) {
-        circle(ctx, tx - 6, ty - 3, 3.5); fs(ctx, '#8b5a2b');
-        circle(ctx, tx, ty - 6, 3); fs(ctx, '#8b5a2b');
-      }
-    }
+  if (towerStyle === 'desert') {
+    drawTowerCatapultDesert(ctx, x, y, level, angle, armPhase, variant);
+    return;
   }
-  circle(ctx, 0, 0, 5.5);
-  fs(ctx, PAL.stoneDark);
-  ctx.restore();
+  if (towerStyle === 'mountains') {
+    drawTowerCatapultMountains(ctx, x, y, level, angle, armPhase, variant);
+    return;
+  }
+  if (towerStyle === 'jungle') {
+    drawTowerCatapultJungle(ctx, x, y, level, angle, armPhase, variant);
+    return;
+  }
+  if (towerStyle === 'snow') {
+    drawTowerCatapultSnow(ctx, x, y, level, angle, armPhase, variant);
+    return;
+  }
+  if (towerStyle === 'forest') {
+    drawTowerCatapultForest(ctx, x, y, level, angle, armPhase, variant);
+    return;
+  }
+  drawTowerCatapultMeadow(ctx, x, y, level, angle, armPhase, variant);
 }
 
 export function mushroom(ctx: Ctx, cx: number, cy: number, r: number, seed: number, cap: string = PAL.mushroomCap, dot = '#fff3e6'): void {
@@ -983,28 +1133,813 @@ export function mushroom(ctx: Ctx, cx: number, cy: number, r: number, seed: numb
 }
 
 export function drawTowerSpore(ctx: Ctx, x: number, y: number, level: number, time: number, variant = 0): void {
-  drawShadow(ctx, x, y + 10, 36, 14);
-  drawMound(ctx, x, y, 30);
-  const cap = variant === 1 ? '#8a6a2a' : variant === 2 ? '#7a3fb0' : PAL.mushroomCap;
-  const dot = variant === 1 ? '#c9b26a' : variant === 2 ? '#e6c8ff' : '#fff3e6';
+  if (towerStyle === 'asia') {
+    drawTowerSporeAsia(ctx, x, y, level, time, variant);
+    return;
+  }
+  if (towerStyle === 'desert') {
+    drawTowerSporeDesert(ctx, x, y, level, time, variant);
+    return;
+  }
+  if (towerStyle === 'mountains') {
+    drawTowerSporeMountains(ctx, x, y, level, time, variant);
+    return;
+  }
+  if (towerStyle === 'jungle') {
+    drawTowerSporeJungle(ctx, x, y, level, time, variant);
+    return;
+  }
+  if (towerStyle === 'snow') {
+    drawTowerSporeSnow(ctx, x, y, level, time, variant);
+    return;
+  }
+  if (towerStyle === 'forest') {
+    drawTowerSporeForest(ctx, x, y, level, time, variant);
+    return;
+  }
+  drawTowerSporeMeadow(ctx, x, y, level, time, variant);
+}
+
+// ───────────────────────── постройки Азии ─────────────────────────
+
+/** Бамбуковая жердь: зелёная, с бликом со стороны света и узлами. */
+function bambooPole(ctx: Ctx, x1: number, y1: number, x2: number, y2: number, w: number): void {
+  const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+  const ux = (x2 - x1) / len;
+  const uy = (y2 - y1) / len;
+  const line = (ox: number, oy: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(x1 + ox, y1 + oy);
+    ctx.lineTo(x2 + ox, y2 + oy);
+    ctx.stroke();
+  };
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = w + 2.4;
+  line(0, 0);
+  ctx.strokeStyle = '#7fb23c';
+  ctx.lineWidth = w;
+  line(0, 0);
+  ctx.strokeStyle = 'rgba(235,255,195,0.6)';
+  ctx.lineWidth = Math.max(1, w * 0.3);
+  line(uy * w * 0.22, -ux * w * 0.22);
+  ctx.strokeStyle = '#3d621a';
+  ctx.lineWidth = 1.3;
+  ctx.lineCap = 'butt';
+  for (let d = 9; d < len - 5; d += 12) {
+    const px = x1 + ux * d;
+    const py = y1 + uy * d;
+    ctx.beginPath();
+    ctx.moveTo(px - uy * w * 0.5, py + ux * w * 0.5);
+    ctx.lineTo(px + uy * w * 0.5, py - ux * w * 0.5);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'round';
+}
+
+/** Черепичная крыша с загнутыми углами: by — линия свеса, w — полуширина свеса, h — высота до конька. */
+function pagodaRoof(ctx: Ctx, cx: number, by: number, w: number, h: number): void {
+  const rw = w * 0.4;
+  const eave = (): void => {
+    ctx.moveTo(cx - w - 5, by - 9);
+    ctx.quadraticCurveTo(cx - w + 4, by + 2, cx - w * 0.5, by + 3);
+    ctx.lineTo(cx + w * 0.5, by + 3);
+    ctx.quadraticCurveTo(cx + w - 4, by + 2, cx + w + 5, by - 9);
+  };
+  const path = (): void => {
+    ctx.beginPath();
+    eave();
+    ctx.quadraticCurveTo(cx + w * 0.55, by - h * 0.3, cx + rw, by - h);
+    ctx.lineTo(cx - rw, by - h);
+    ctx.quadraticCurveTo(cx - w * 0.55, by - h * 0.3, cx - w - 5, by - 9);
+    ctx.closePath();
+  };
+  ctx.fillStyle = 'rgba(20,15,5,0.3)';
+  ell(ctx, cx, by + 6, w * 0.8, 5);
+  ctx.fill();
+  path();
+  const g = ctx.createLinearGradient(cx - w, by - h, cx + w * 0.6, by + 3);
+  g.addColorStop(0, '#62808f');
+  g.addColorStop(0.5, '#3f5868');
+  g.addColorStop(1, '#2b3d4a');
+  outline(ctx, 2.6);
+  fs(ctx, g);
+  // Ряды черепицы веером от конька к свесу.
+  ctx.save();
+  path();
+  ctx.clip();
+  const k = 6;
+  for (let i = -k; i <= k; i++) {
+    const t = i / k;
+    for (const [dx, col, lw] of [[0, 'rgba(10,20,30,0.38)', 1.3], [1.7, 'rgba(200,225,240,0.2)', 1]] as const) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(cx + rw * t + dx, by - h);
+      ctx.quadraticCurveTo(cx + w * 0.55 * t + dx, by - h * 0.3, cx + (w + 3) * t + dx, by + 4);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.beginPath();
+  eave();
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 5.5;
+  ctx.stroke();
+  ctx.strokeStyle = '#7393a4';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  outline(ctx, 2);
+  ctx.beginPath();
+  ctx.rect(cx - rw - 4, by - h - 3.5, 2 * rw + 8, 5);
+  fs(ctx, '#24323d');
+  for (const s of [-1, 1]) {
+    outline(ctx, 1.6);
+    ctx.beginPath();
+    ctx.moveTo(cx + s * (rw + 4), by - h + 1);
+    ctx.quadraticCurveTo(cx + s * (rw + 10), by - h - 2, cx + s * (rw + 7), by - h - 9);
+    ctx.quadraticCurveTo(cx + s * (rw + 4), by - h - 5, cx + s * (rw + 3), by - h - 3);
+    ctx.closePath();
+    fs(ctx, '#e0b13c');
+    outline(ctx, 1.4);
+    circle(ctx, cx + s * (w + 5), by - 9, 2.3);
+    fs(ctx, '#e0b13c');
+  }
+}
+
+/**
+ * Казарма Азии: пагода на каменном цоколе с лестницей, белёные стены в тёмном каркасе, решётчатые
+ * окна, красные столбы у входа и синяя занавеска-норэн. 2-й уровень — второй ярус и фонари на углах,
+ * 3-й — золотой шпиль. Броненосцы — каменные щиты у входа, жнецы — скрещённые нагинаты над крышей.
+ */
+function drawTowerBarracksAsia(ctx: Ctx, x: number, y: number, level: number, variant: number): void {
+  const lv = Math.min(level, 3);
+  const pw = 38;
+  const ww = 27;
+  const wallBot = y - 6;
+  const wallTop = wallBot - 26;
+  drawShadow(ctx, x + 4, y + 12, 50, 17);
+  // Знамя позади: крыши его частично закрывают.
+  nobori(ctx, x + 40, y + 4, wallTop - 58 - (lv - 1) * 8);
+  if (variant === 2) {
+    for (const s of [-1, 1]) {
+      const bx = x + s * 15;
+      const by = wallTop - 48;
+      bambooPole(ctx, x - s * 30, wallBot - 2, bx, by, 3.2);
+      outline(ctx, 1.8);
+      ctx.beginPath();
+      ctx.moveTo(bx - s * 1.5, by + 2);
+      ctx.quadraticCurveTo(bx + s * 8, by - 6, bx + s * 4, by - 16);
+      ctx.quadraticCurveTo(bx + s * 1, by - 7, bx - s * 2.5, by - 1);
+      ctx.closePath();
+      fs(ctx, '#e3eaee');
+    }
+  }
+  // Цоколь из тёсаного камня и ступени.
+  outline(ctx, 2.5);
+  ctx.beginPath();
+  ctx.moveTo(x - pw, y - 2); ctx.lineTo(x - pw + 9, y - 11); ctx.lineTo(x + pw - 9, y - 11); ctx.lineTo(x + pw, y - 2);
+  ctx.closePath();
+  fs(ctx, '#c4beb0');
+  ctx.beginPath();
+  ctx.moveTo(x - pw, y - 2); ctx.lineTo(x + pw, y - 2); ctx.lineTo(x + pw - 2, y + 12); ctx.lineTo(x - pw + 2, y + 12);
+  ctx.closePath();
+  let g = ctx.createLinearGradient(0, y - 2, 0, y + 12);
+  g.addColorStop(0, '#a39d8f');
+  g.addColorStop(1, '#7c766a');
+  fs(ctx, g);
+  ctx.strokeStyle = 'rgba(40,35,25,0.45)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(x - pw + 1, y + 5); ctx.lineTo(x + pw - 1, y + 5); ctx.stroke();
+  for (const [jx, j0, j1] of [[-27, -2, 5], [-9, -2, 5], [13, -2, 5], [30, -2, 5], [-19, 5, 12], [21, 5, 12]] as const) {
+    ctx.beginPath(); ctx.moveTo(x + jx, y + j0); ctx.lineTo(x + jx, y + j1); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(90,140,60,0.55)';
+  for (const [mx, my] of [[-33, 9], [-30, 11], [31, 10], [26, 11.5]] as const) {
+    circle(ctx, x + mx, y + my, 1.8);
+    ctx.fill();
+  }
+  outline(ctx, 2);
+  ctx.beginPath(); ctx.rect(x - 13, y + 3, 26, 5); fs(ctx, '#b6b0a2');
+  ctx.beginPath(); ctx.rect(x - 15, y + 8, 30, 5); fs(ctx, '#a6a092');
+  // Стены, каркас, окна.
+  outline(ctx, 2.5);
+  ctx.beginPath();
+  ctx.rect(x - ww, wallTop, 2 * ww, wallBot - wallTop);
+  g = ctx.createLinearGradient(x - ww, 0, x + ww, 0);
+  g.addColorStop(0, '#fcf3dc');
+  g.addColorStop(1, '#d8c59c');
+  fs(ctx, g);
+  ctx.fillStyle = '#5e3420';
+  ctx.fillRect(x - ww, wallTop, 2 * ww, 4);
+  ctx.fillRect(x - ww, wallBot - 3, 2 * ww, 3);
+  ctx.fillRect(x - ww, wallTop, 4, wallBot - wallTop);
+  ctx.fillRect(x + ww - 4, wallTop, 4, wallBot - wallTop);
+  for (const s of [-1, 1]) {
+    const wx = x + s * 19 - 5;
+    outline(ctx, 1.5);
+    ctx.beginPath();
+    ctx.rect(wx, wallTop + 7, 10, 11);
+    fs(ctx, lv >= 3 ? '#ffe7a8' : '#fff6e2');
+    ctx.strokeStyle = '#7a4a2a';
+    ctx.lineWidth = 1;
+    for (const k of [3.3, 6.7]) { ctx.beginPath(); ctx.moveTo(wx + k, wallTop + 7); ctx.lineTo(wx + k, wallTop + 18); ctx.stroke(); }
+    for (const k of [3.7, 7.3]) { ctx.beginPath(); ctx.moveTo(wx, wallTop + 7 + k); ctx.lineTo(wx + 10, wallTop + 7 + k); ctx.stroke(); }
+  }
+  // Вход: арка, красные столбы, занавеска-норэн.
+  outline(ctx, 2.2);
+  ctx.beginPath();
+  ctx.moveTo(x - 9, wallBot); ctx.lineTo(x - 9, wallBot - 14); ctx.quadraticCurveTo(x, wallBot - 22, x + 9, wallBot - 14); ctx.lineTo(x + 9, wallBot);
+  ctx.closePath();
+  fs(ctx, '#1a0e06');
+  for (const s of [-1, 1]) {
+    outline(ctx, 1.8);
+    ctx.beginPath();
+    ctx.rect(x + s * 12 - 2.5, wallTop + 3, 5, wallBot - wallTop - 2);
+    fs(ctx, '#c8452f');
+    ctx.fillStyle = 'rgba(255,220,200,0.35)';
+    ctx.fillRect(x + s * 12 - 1.8, wallTop + 4, 1.4, wallBot - wallTop - 4);
+    outline(ctx, 1.5);
+    ctx.beginPath();
+    ctx.moveTo(x + s * 0.8, wallBot - 17); ctx.lineTo(x + s * 8.6, wallBot - 15); ctx.lineTo(x + s * 8.6, wallBot - 7); ctx.lineTo(x + s * 0.8, wallBot - 8);
+    ctx.closePath();
+    fs(ctx, '#2f4a8a');
+    ctx.strokeStyle = '#f4ead2';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x + s * 1.8, wallBot - 10.5);
+    ctx.quadraticCurveTo(x + s * 3.6, wallBot - 13, x + s * 5.2, wallBot - 11);
+    ctx.quadraticCurveTo(x + s * 6.6, wallBot - 9.2, x + s * 8, wallBot - 11.5);
+    ctx.stroke();
+  }
+  if (variant === 1) {
+    for (const s of [-1, 1]) {
+      const sx = x + s * 33;
+      const sy = y - 7;
+      outline(ctx, 2);
+      circle(ctx, sx, sy, 8);
+      fs(ctx, '#9d9789');
+      ctx.strokeStyle = '#6f6a5e';
+      ctx.lineWidth = 1.5;
+      circle(ctx, sx, sy, 5.4);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ell(ctx, sx - 3, sy - 3, 2.6, 1.6, -0.5);
+      ctx.fill();
+      outline(ctx, 1.4);
+      circle(ctx, sx, sy, 2.2);
+      fs(ctx, '#e0b13c');
+    }
+  }
+  // Крыши.
+  pagodaRoof(ctx, x, wallTop + 2, 37, 18);
+  let peak = wallTop - 16;
+  if (lv >= 2) {
+    const t2b = wallTop - 10;
+    const t2t = t2b - 13;
+    outline(ctx, 2.2);
+    ctx.beginPath();
+    ctx.rect(x - 16, t2t, 32, t2b - t2t + 2);
+    fs(ctx, '#5e3420');
+    for (const k of [-9, 0, 9]) {
+      ctx.fillStyle = '#ffeec2';
+      ctx.fillRect(x + k - 3, t2t + 3, 6, 7);
+      ctx.strokeStyle = '#5e3420';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + k, t2t + 3); ctx.lineTo(x + k, t2t + 10); ctx.stroke();
+    }
+    pagodaRoof(ctx, x, t2t + 2, 25, 15);
+    peak = t2t - 13;
+    for (const s of [-1, 1]) {
+      ctx.save();
+      ctx.translate(x + s * 42, wallTop - 7);
+      ctx.scale(0.6, 0.6);
+      outline(ctx, 1.6);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 6); ctx.stroke();
+      paperLantern(ctx, 0, 16);
+      ctx.restore();
+    }
+  }
+  if (lv >= 3) {
+    outline(ctx, 1.6);
+    ctx.beginPath();
+    ctx.rect(x - 1.8, peak - 18, 3.6, 16);
+    fs(ctx, '#e0b13c');
+    for (let i = 0; i < 4; i++) {
+      ell(ctx, x, peak - 5 - i * 3.6, 4.4 - i * 0.6, 1.4);
+      fs(ctx, '#f2c94c');
+    }
+    circle(ctx, x, peak - 20, 2.6);
+    fs(ctx, '#f2c94c');
+  }
+}
+
+/** Цвета линчжи: тёмное основание у ствола, светлее к краю, жёлтая кромка. */
+interface ReishiTone { hi: string; lo: string; rim: string }
+
+/**
+ * Линчжи-полка на стволе (вид 3/4 сверху): полукруглый веер с волнистым краем, плоской стороной
+ * к стволу; тёмный у ствола и светлый к краю, кольца роста, жёлтая кромка, бледный низ, лаковый блик.
+ */
+function reishiShelf(ctx: Ctx, ax: number, ay: number, r: number, dir: number, tone: ReishiTone): void {
+  const ry = r * 0.5;
+  const edge = (dy: number, k: number, close: boolean): void => {
+    ctx.beginPath();
+    const n = 20;
+    for (let i = 0; i <= n; i++) {
+      const a = -Math.PI / 2 + (i / n) * Math.PI;
+      const lobe = 1 + 0.08 * Math.sin((i / n) * Math.PI * 3);
+      const px = ax + dir * Math.cos(a) * r * k * lobe;
+      const py = ay + Math.sin(a) * ry * k * lobe + dy;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    if (close) ctx.closePath();
+  };
+  outline(ctx, 1.8);
+  edge(2.6, 1, true);
+  fs(ctx, '#ead8a8');
+  edge(0, 1, true);
+  const g = ctx.createRadialGradient(ax, ay, 1, ax, ay, r * 1.05);
+  g.addColorStop(0, tone.lo);
+  g.addColorStop(0.38, tone.hi);
+  g.addColorStop(1, tone.hi);
+  fs(ctx, g);
+  ctx.save();
+  edge(0, 1, true);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(30,5,0,0.3)';
+  ctx.lineWidth = 1.1;
+  for (const k of [0.42, 0.7]) {
+    ctx.beginPath();
+    ctx.ellipse(ax, ay, r * k, ry * k, 0, 0, TAU);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.strokeStyle = tone.rim;
+  ctx.lineWidth = 1.5;
+  edge(0, 0.93, false);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,240,220,0.55)';
+  ell(ctx, ax + dir * r * 0.45, ay - ry * 0.4, r * 0.28, ry * 0.16, -dir * 0.15);
+  ctx.fill();
+}
+
+/** Корявая коряга с развилкой и мхом. Возвращает высоту верхушки. */
+function gnarledTrunk(ctx: Ctx, x: number, base: number, h: number): number {
+  const top = base - h;
+  ctx.beginPath();
+  ctx.moveTo(x - 8, base);
+  ctx.bezierCurveTo(x - 3, base - h * 0.35, x - 8, base - h * 0.65, x - 5, top + 6);
+  ctx.lineTo(x - 10, top - 3);
+  ctx.lineTo(x - 4, top + 1);
+  ctx.lineTo(x + 1, top - 7);
+  ctx.lineTo(x + 4, top + 1);
+  ctx.lineTo(x + 9, top - 2);
+  ctx.lineTo(x + 5, top + 7);
+  ctx.bezierCurveTo(x + 7, base - h * 0.6, x + 2, base - h * 0.35, x + 8, base);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(x - 8, 0, x + 8, 0);
+  g.addColorStop(0, '#94693f');
+  g.addColorStop(0.45, '#7a5230');
+  g.addColorStop(1, '#4a2e18');
+  outline(ctx, 2.2);
+  fs(ctx, g);
+  ctx.strokeStyle = 'rgba(35,18,5,0.4)';
+  ctx.lineWidth = 1.1;
+  for (const k of [-3.5, 0.5, 3.5]) {
+    ctx.beginPath();
+    ctx.moveTo(x + k, base - 3);
+    ctx.bezierCurveTo(x + k + 2, base - h * 0.35, x + k - 2, base - h * 0.6, x + k * 0.6, top + 8);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#6f9a3c';
+  for (const [mx, my, mr] of [[-6, 4, 2.4], [-3, 2, 1.8], [5, 5, 2], [1, -3, 1.6]] as const) {
+    circle(ctx, x + mx, top + my, mr);
+    ctx.fill();
+  }
+  return top;
+}
+
+/** Высокая сине-белая ваза: пояски у горла и ножки, синий лотос с завитками. Возвращает y горла. */
+function porcelainVase(ctx: Ctx, x: number, y: number, w: number, h: number, gold: boolean): number {
+  const rimY = y - h;
+  const body = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.62, rimY + 2);
+    ctx.bezierCurveTo(x - w * 0.6, rimY + h * 0.2, x - w * 1.12, rimY + h * 0.4, x - w * 0.95, rimY + h * 0.72);
+    ctx.quadraticCurveTo(x - w * 0.85, y - 2, x - w * 0.55, y);
+    ctx.lineTo(x + w * 0.55, y);
+    ctx.quadraticCurveTo(x + w * 0.85, y - 2, x + w * 0.95, rimY + h * 0.72);
+    ctx.bezierCurveTo(x + w * 1.12, rimY + h * 0.4, x + w * 0.6, rimY + h * 0.2, x + w * 0.62, rimY + 2);
+    ctx.closePath();
+  };
+  body();
+  const g = ctx.createLinearGradient(x - w, 0, x + w, 0);
+  g.addColorStop(0, '#b7c6d6');
+  g.addColorStop(0.3, '#f8fbfd');
+  g.addColorStop(0.55, '#e4ebf3');
+  g.addColorStop(1, '#8fa2b6');
+  outline(ctx, 2.5);
+  fs(ctx, g);
+  ctx.save();
+  body();
+  ctx.clip();
+  ctx.strokeStyle = '#2f5aa8';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(x, rimY + 7, w, 2.5, 0, 0, Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(x, y - 5, w, 2.5, 0, 0, Math.PI); ctx.stroke();
+  // Пояс лотосовых лепестков по низу и волна по плечу — классический сине-белый узор.
+  const pTop = rimY + h * 0.5;
+  const pBot = y - 6;
+  ctx.lineWidth = 1.3;
+  for (let i = -3; i <= 3; i++) {
+    const px = x + i * w * 0.36;
+    ctx.beginPath();
+    ctx.moveTo(px - w * 0.15, pBot);
+    ctx.quadraticCurveTo(px - w * 0.17, pTop + 4, px, pTop);
+    ctx.quadraticCurveTo(px + w * 0.17, pTop + 4, px + w * 0.15, pBot);
+    ctx.fillStyle = '#d2e0f5';
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(px, pTop + 4);
+    ctx.lineTo(px, pBot - 2);
+    ctx.stroke();
+  }
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let k = 0; k <= 24; k++) {
+    const px = x - w + (k / 24) * 2 * w;
+    const py = rimY + h * 0.3 + Math.sin(k * 1.1) * 1.8;
+    if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.restore();
+  outline(ctx, 2.2);
+  ell(ctx, x, rimY, w * 0.66, 4.6);
+  fs(ctx, '#f4f7fb');
+  if (gold) {
+    ctx.strokeStyle = '#e0b13c';
+    ctx.lineWidth = 1.6;
+    ell(ctx, x, rimY, w * 0.66 - 1, 3.7);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#3e2a18';
+  ell(ctx, x, rimY + 0.5, w * 0.5, 2.8);
+  ctx.fill();
+  return rimY;
+}
+
+/**
+ * Грибница Азии: высокая сине-белая ваза, из неё корявая коряга, по которой полками растут
+ * лаковые линчжи; вокруг светятся споры. 2-й уровень — красная лаковая подставка, 3-й — золотое
+ * горло и бумажный оберег. Цвет грибов и свечения по специализации: гниль — болотный, дурман — лиловый.
+ */
+function drawTowerSporeAsia(ctx: Ctx, x: number, y: number, level: number, time: number, variant: number): void {
+  const lv = Math.min(level, 3);
+  const tone: ReishiTone = variant === 1
+    ? { hi: '#a9a640', lo: '#45440f', rim: '#e2dc8e' }
+    : variant === 2 ? { hi: '#a65ad8', lo: '#3c1460', rim: '#f2ccff' } : { hi: '#d06a34', lo: '#5e1c0c', rim: '#f4c862' };
   const glow = variant === 1 ? '150,170,60' : variant === 2 ? '200,120,255' : '181,123,214';
   const pulse = 0.6 + 0.4 * Math.sin(time * 2.2);
-  const g = ctx.createRadialGradient(x, y - 4, 2, x, y - 4, 40);
-  g.addColorStop(0, `rgba(${glow},${0.45 * pulse})`);
+  drawShadow(ctx, x + 3, y + 10, 32, 12);
+  let base = y + 7;
+  if (lv >= 2) {
+    outline(ctx, 2);
+    for (const s of [-1, 0, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(x + s * 18 - 2.5, y + 5);
+      ctx.quadraticCurveTo(x + s * 22, y + 11, x + s * 19, y + 14);
+      ctx.lineTo(x + s * 16, y + 14);
+      ctx.quadraticCurveTo(x + s * 17, y + 10, x + s * 18 + 2.5, y + 5);
+      ctx.closePath();
+      fs(ctx, '#7e2416');
+    }
+    ell(ctx, x, y + 7, 26, 4);
+    fs(ctx, '#7e2416');
+    ell(ctx, x, y + 4, 26, 7);
+    const sg = ctx.createLinearGradient(x - 26, 0, x + 26, 0);
+    sg.addColorStop(0, '#d0503a');
+    sg.addColorStop(1, '#8e2a1a');
+    fs(ctx, sg);
+    ctx.strokeStyle = '#e0b13c';
+    ctx.lineWidth = 1.2;
+    ell(ctx, x, y + 4, 22, 5.2);
+    ctx.stroke();
+    base = y + 5;
+  }
+  const rimY = porcelainVase(ctx, x, base, 20, 28, lv >= 3);
+  const th = 30 + lv * 5;
+  const top = gnarledTrunk(ctx, x, rimY + 2, th);
+  const g = ctx.createRadialGradient(x, top + th * 0.4, 2, x, top + th * 0.4, 38);
+  g.addColorStop(0, `rgba(${glow},${0.38 * pulse})`);
   g.addColorStop(1, `rgba(${glow},0)`);
   ctx.fillStyle = g;
-  ell(ctx, x, y - 2, 42, 22);
+  circle(ctx, x, top + th * 0.4, 38);
   ctx.fill();
-  const lv = Math.min(level, 3);
-  const small: ReadonlyArray<readonly [number, number, number]> = [[x - 21, y + 2, 11], [x + 22, y - 1, 13], [x + 6, y + 10, 9]];
-  for (let i = 0; i < lv; i++) mushroom(ctx, small[i][0], small[i][1], small[i][2], i, cap, dot);
-  mushroom(ctx, x, y - 12, 22 + lv * 2 + (variant ? 4 : 0), 7, cap, dot);
+  // Полки сверху вниз: нижние перекрывают бледный низ верхних.
+  const shelves: ReadonlyArray<readonly [number, number, number]> = [[0.26, 1, 16], [0.48, -1, 15], [0.76, 1, 13], [0.62, -1, 11], [0.93, -1, 10]];
+  const grow = variant ? 1.5 : 0;
+  shelves.slice(0, 2 + lv)
+    .sort((a, b) => b[0] - a[0])
+    .forEach(([k, dir, r]) => reishiShelf(ctx, x + dir * 3, rimY + 2 - th * k, r + grow, dir, tone));
+  if (lv >= 3) {
+    outline(ctx, 1.2);
+    ctx.beginPath(); ctx.moveTo(x + 13, rimY + 3); ctx.lineTo(x + 17, rimY + 8); ctx.stroke();
+    ctx.save();
+    ctx.translate(x + 17, rimY + 8);
+    ctx.rotate(0.15);
+    outline(ctx, 1.5);
+    ctx.beginPath(); ctx.rect(-3, 0, 6, 15); fs(ctx, '#fbf4e2');
+    ctx.strokeStyle = '#c8452f';
+    ctx.lineWidth = 1.1;
+    for (const k of [3, 6.5, 10]) { ctx.beginPath(); ctx.moveTo(-1.5, k); ctx.lineTo(1.5, k + 1.2); ctx.stroke(); }
+    ctx.restore();
+  }
   for (let i = 0; i < 3 + level; i++) {
     const t = (time * 0.35 + i * 0.23) % 1;
-    const sx = x + Math.sin(time * 1.3 + i * 1.7) * 16;
-    const sy = y - 20 - t * 46;
-    ctx.fillStyle = `rgba(${glow},${(1 - t) * 0.8})`;
-    circle(ctx, sx, sy, 2.5 + (1 - t) * 1.5);
+    const sx = x + Math.sin(time * 1.3 + i * 1.7) * 20;
+    const sy = top + 6 - t * 44;
+    ctx.fillStyle = `rgba(${glow},${(1 - t) * 0.85})`;
+    circle(ctx, sx, sy, 2.4 + (1 - t) * 1.6);
+    ctx.fill();
+  }
+}
+
+/** Семя лотоса в корзине катапульты. */
+function lotusSeed(ctx: Ctx, x: number, y: number): void {
+  outline(ctx, 1.6);
+  ell(ctx, x, y, 4.3, 3.5);
+  fs(ctx, '#8b5a2b');
+  ctx.fillStyle = 'rgba(255,230,190,0.45)';
+  ell(ctx, x - 1.4, y - 1.2, 1.5, 0.9);
+  ctx.fill();
+}
+
+/**
+ * Катапульта Азии: каменное основание, деревянный поворотный круг с красным лаковым ободом и
+ * золотыми заклёпками, рама из бамбука с обвязками, бамбуковое плечо и плетёная корзина.
+ * 2-й уровень — бухта верёвки, 3-й — красные кисти на раме. Камнемёт — валун, дождь — три семени.
+ */
+function drawTowerCatapultAsia(ctx: Ctx, x: number, y: number, level: number, angle: number, armPhase: number, variant: number): void {
+  const lv = Math.min(level, 3);
+  drawShadow(ctx, x + 3, y + 10, 42, 15);
+  outline(ctx, 2.5);
+  ell(ctx, x, y + 2, 36, 15);
+  fs(ctx, '#857f72');
+  ell(ctx, x, y - 2, 36, 15);
+  fs(ctx, '#b6b0a2');
+  ctx.strokeStyle = 'rgba(40,35,25,0.4)';
+  ctx.lineWidth = 1.1;
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * TAU + 0.2;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(a) * 29, y - 2 + Math.sin(a) * 11.5);
+    ctx.lineTo(x + Math.cos(a) * 36, y - 2 + Math.sin(a) * 15);
+    ctx.stroke();
+  }
+  for (const jx of [-24, -6, 12, 28]) {
+    ctx.beginPath(); ctx.moveTo(x + jx, y + 9); ctx.lineTo(x + jx, y + 16); ctx.stroke();
+  }
+  const tr = variant === 1 ? 31 : 28;
+  const ty0 = y - 7;
+  outline(ctx, 2.5);
+  ell(ctx, x, ty0 + 3, tr, tr * 0.46);
+  fs(ctx, '#5e3a1c');
+  ell(ctx, x, ty0, tr, tr * 0.46);
+  const tg = ctx.createRadialGradient(x - 8, ty0 - 4, 2, x, ty0, tr);
+  tg.addColorStop(0, '#c98e4e');
+  tg.addColorStop(1, '#87582b');
+  fs(ctx, tg);
+  ctx.save();
+  ell(ctx, x, ty0, tr, tr * 0.46);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(70,40,15,0.4)';
+  ctx.lineWidth = 1;
+  for (let k = -tr; k <= tr; k += 6) {
+    ctx.beginPath(); ctx.moveTo(x + k, ty0 - tr); ctx.lineTo(x + k, ty0 + tr); ctx.stroke();
+  }
+  ctx.restore();
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 5;
+  ell(ctx, x, ty0, tr, tr * 0.46);
+  ctx.stroke();
+  ctx.strokeStyle = '#c8452f';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = '#f2c94c';
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * TAU;
+    circle(ctx, x + Math.cos(a) * tr, ty0 + Math.sin(a) * tr * 0.46, 1.4);
+    ctx.fill();
+  }
+  // Рама приподнята на бамбуковых стойках: тень на круге, стойки вертикально в экране.
+  const lift = 9;
+  const corners: ReadonlyArray<readonly [number, number]> = [[-15, -11], [15, -11], [-15, 11], [15, 11]];
+  const cs = Math.cos(angle);
+  const sn = Math.sin(angle);
+  ctx.save();
+  ctx.translate(x + 3, y - 9);
+  ctx.rotate(angle);
+  ctx.strokeStyle = 'rgba(30,15,0,0.3)';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(-15, -11, 30, 22);
+  ctx.restore();
+  for (const [cx, cy] of [...corners].sort((a, b) => (a[0] * sn + a[1] * cs) - (b[0] * sn + b[1] * cs))) {
+    const px = x + cx * cs - cy * sn;
+    const py = y - 12 + cx * sn + cy * cs;
+    bambooPole(ctx, px, py, px, py - lift, 3.6);
+  }
+  ctx.save();
+  ctx.translate(x, y - 12 - lift);
+  ctx.rotate(angle);
+  bambooPole(ctx, -15, -11, 15, -11, 4.2);
+  bambooPole(ctx, -15, 11, 15, 11, 4.2);
+  bambooPole(ctx, -15, -11, -15, 11, 4.2);
+  bambooPole(ctx, 15, -11, 15, 11, 4.2);
+  for (const [cx, cy] of corners) {
+    outline(ctx, 1.4);
+    circle(ctx, cx, cy, 3.4);
+    fs(ctx, '#dcc38a');
+    ctx.strokeStyle = 'rgba(115,80,30,0.8)';
+    ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.moveTo(cx - 2, cy - 2); ctx.lineTo(cx + 2, cy + 2); ctx.stroke();
+  }
+  outline(ctx, 2);
+  ctx.beginPath();
+  ctx.rect(-2.5, -12.5, 5, 25);
+  fs(ctx, '#6b4423');
+  if (lv >= 2) {
+    for (let i = 0; i < 3; i++) {
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 3.4;
+      ctx.beginPath(); ctx.arc(-10 + i * 2.6, 0, 4.6 - i * 0.7, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = '#dcc38a';
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+    }
+  }
+  if (lv >= 3) {
+    for (const s of [-1, 1]) {
+      ctx.strokeStyle = '#c8452f';
+      ctx.lineWidth = 1.4;
+      for (const d of [-1.5, 0, 1.5]) {
+        ctx.beginPath(); ctx.moveTo(-15, s * 11); ctx.lineTo(-23, s * 11 + d * 2 + s * 3); ctx.stroke();
+      }
+      outline(ctx, 1.2);
+      circle(ctx, -16.5, s * 11, 2.2);
+      fs(ctx, '#e0b13c');
+    }
+  }
+  const len = 30 + lv * 5 + (variant === 1 ? 6 : 0);
+  const p = armPhase;
+  const tx = -len * Math.cos(p * Math.PI);
+  const ty = -len * 0.25 * Math.sin(p * Math.PI);
+  bambooPole(ctx, 0, 0, tx, ty, variant === 1 ? 6 : 5);
+  const bw = variant === 2 ? 13 : 9;
+  const bh = variant === 2 ? 8 : 6.5;
+  outline(ctx, 2.2);
+  ell(ctx, tx, ty, bw, bh);
+  fs(ctx, '#c9a060');
+  ctx.save();
+  ell(ctx, tx, ty, bw, bh);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(110,70,25,0.6)';
+  ctx.lineWidth = 1;
+  for (let k = -bw - 4; k <= bw; k += 3) {
+    ctx.beginPath(); ctx.moveTo(tx + k, ty - bh); ctx.lineTo(tx + k + 4, ty + bh); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tx + k + 4, ty - bh); ctx.lineTo(tx + k, ty + bh); ctx.stroke();
+  }
+  ctx.restore();
+  if (p < 0.5) {
+    if (variant === 1) riverStone(ctx, tx, ty, 7.5, 6.5, '#a39d8f');
+    else {
+      const seeds: ReadonlyArray<readonly [number, number]> = variant === 2 ? [[-5, -1], [4, -2.5], [0, 2]] : lv >= 3 ? [[-2.5, 0.5], [3.5, -1.5]] : [[0, 0]];
+      for (const [sx, sy] of seeds) lotusSeed(ctx, tx + sx, ty + sy);
+    }
+  }
+  outline(ctx, 2);
+  circle(ctx, 0, 0, 5.5);
+  fs(ctx, '#b8862e');
+  ctx.fillStyle = 'rgba(255,240,180,0.6)';
+  circle(ctx, -1.5, -1.5, 1.7);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Каменный фонарь-торо: основание, столб, светящийся фонарь под изогнутой крышкой, мох. */
+function stoneToro(ctx: Ctx, x: number, y: number, s: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  drawShadow(ctx, 5, 1, 15, 5);
+  const glow = ctx.createRadialGradient(0, -32, 1, 0, -32, 18);
+  glow.addColorStop(0, 'rgba(255,210,120,0.5)');
+  glow.addColorStop(1, 'rgba(255,210,120,0)');
+  ctx.fillStyle = glow;
+  circle(ctx, 0, -32, 18);
+  ctx.fill();
+  outline(ctx, 2);
+  ctx.beginPath(); ctx.rect(-10, -6, 20, 6); fs(ctx, '#9d978a');
+  ctx.beginPath(); ctx.rect(-4, -22, 8, 16); fs(ctx, '#b3ad9f');
+  ctx.beginPath(); ctx.rect(-10, -26, 20, 4); fs(ctx, '#a39d8f');
+  ctx.beginPath(); ctx.rect(-7, -38, 14, 12); fs(ctx, '#b3ad9f');
+  ctx.fillStyle = '#ffd77a';
+  ctx.fillRect(-4, -36, 8, 8);
+  ctx.strokeStyle = '#8a8478';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(0, -36); ctx.lineTo(0, -28); ctx.stroke();
+  outline(ctx, 2);
+  ctx.beginPath();
+  ctx.moveTo(-14, -37); ctx.quadraticCurveTo(-6, -40, -3, -46); ctx.lineTo(3, -46); ctx.quadraticCurveTo(6, -40, 14, -37);
+  ctx.closePath();
+  fs(ctx, '#8f897c');
+  circle(ctx, 0, -49, 3);
+  fs(ctx, '#a39d8f');
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillRect(-3.2, -21, 2, 14);
+  ctx.fillRect(-9, -5, 6, 1.6);
+  ctx.fillStyle = '#6f9a3c';
+  for (const [mx, my, mr] of [[-8, -38, 2], [-5, -40.5, 1.6], [6, -38.5, 1.8], [-8, -2, 1.8], [7, -3, 1.4]] as const) {
+    circle(ctx, mx, my, mr);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** Красные ворота-тории: столбы с чёрными башмаками, нижняя балка, табличка, изогнутая верхняя балка. */
+function torii(ctx: Ctx, x: number, y: number, w: number, h: number): void {
+  for (const s of [-1, 1]) {
+    const px = x + s * w;
+    outline(ctx, 2.2);
+    ctx.beginPath();
+    ctx.rect(px - 3.6, y - h, 7.2, h);
+    const g = ctx.createLinearGradient(px - 3.6, 0, px + 3.6, 0);
+    g.addColorStop(0, '#ec7050');
+    g.addColorStop(1, '#962c1a');
+    fs(ctx, g);
+    ctx.beginPath();
+    ctx.rect(px - 4.8, y - 6, 9.6, 6);
+    fs(ctx, '#2a2420');
+  }
+  outline(ctx, 2);
+  ctx.beginPath(); ctx.rect(x - w - 8, y - h + 11, 2 * w + 16, 5); fs(ctx, '#d0482f');
+  ctx.beginPath(); ctx.rect(x - 2, y - h + 1, 4, 10); fs(ctx, '#d0482f');
+  ctx.beginPath(); ctx.rect(x - 6.5, y - h + 1, 13, 9); fs(ctx, '#2a2420');
+  ctx.strokeStyle = '#e0b13c';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 4.8, y - h + 2.6, 9.6, 5.8);
+  outline(ctx, 2.2);
+  ctx.beginPath();
+  ctx.moveTo(x - w - 16, y - h - 4);
+  ctx.quadraticCurveTo(x, y - h + 2, x + w + 16, y - h - 4);
+  ctx.lineTo(x + w + 14, y - h + 1);
+  ctx.quadraticCurveTo(x, y - h + 7, x - w - 14, y - h + 1);
+  ctx.closePath();
+  fs(ctx, '#d0482f');
+  ctx.beginPath();
+  ctx.moveTo(x - w - 19, y - h - 9);
+  ctx.quadraticCurveTo(x, y - h - 2, x + w + 19, y - h - 9);
+  ctx.lineTo(x + w + 16, y - h - 3.5);
+  ctx.quadraticCurveTo(x, y - h + 2.5, x - w - 16, y - h - 3.5);
+  ctx.closePath();
+  fs(ctx, '#2a2420');
+}
+
+/**
+ * Муравейник Азии: тот же холм, но по низу кладка из тёсаных камней, у входа красные тории,
+ * по бокам каменные фонари, на холме большие знамёна-нобори, вокруг лепестки сакуры.
+ */
+function drawAnthillAsia(ctx: Ctx, x: number, y: number, rng: Rng, onPath?: (px: number, py: number) => boolean): void {
+  anthillMound(ctx, x, y, rng);
+  // Кладка по нижнему краю холма.
+  const at = (t: number): Vec => {
+    const u = 1 - t;
+    return { x: u * u * (x - 100) + 2 * u * t * x + t * t * (x + 100), y: u * u * (y + 32) + 2 * u * t * (y + 66) + t * t * (y + 32) };
+  };
+  const cols = ['#b3ad9f', '#a29c8e', '#bdb7a9', '#979183'];
+  // Тропа к входу проходит сквозь кладку: камни на ней не кладём.
+  for (let i = 0; i < 13; i++) {
+    const p = at(0.03 + (i / 12) * 0.94);
+    if (onPath?.(p.x, p.y - 4)) continue;
+    riverStone(ctx, p.x, p.y - 4 - (i % 2), 8.5 + ((i * 7) % 4), 6 + ((i * 5) % 3) * 0.8, cols[(i * 3) % cols.length]);
+  }
+  // Знамёна на холме.
+  for (const [px, py, top, k] of [[x - 52, y - 12, y - 88, 1.3], [x + 40, y - 36, y - 132, 1.7]] as const) {
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.scale(k, k);
+    nobori(ctx, 0, 0, (top - py) / k);
+    ctx.restore();
+  }
+  torii(ctx, x, y + 22, 33, 52);
+  for (const s of [-1, 1]) if (!onPath?.(x + s * 74, y + 34)) stoneToro(ctx, x + s * 74, y + 44, 0.9);
+  for (let i = 0; i < 14; i++) {
+    const px = x + rng.range(-120, 120);
+    const py = y + rng.range(30, 70);
+    if (onPath?.(px, py)) continue;
+    ctx.fillStyle = rng.next() < 0.5 ? '#ffc1d6' : '#ffe1ea';
+    ell(ctx, px, py, rng.range(2, 3.4), rng.range(1.2, 2), rng.range(0, TAU));
     ctx.fill();
   }
 }
@@ -1034,7 +1969,37 @@ export function drawRange(ctx: Ctx, x: number, y: number, r: number, rgb = '255,
   ctx.setLineDash([]);
 }
 
-export function drawAnthill(ctx: Ctx, x: number, y: number, rng: Rng): void {
+/** Муравейник; у ландшафтов со своим стилем (Азия, Пустыня, Горы, Джунгли, Снега) своё убранство вокруг того же холма. */
+export function drawAnthill(ctx: Ctx, x: number, y: number, rng: Rng, style: Biome | null = null, onPath?: (px: number, py: number) => boolean): void {
+  if (style === 'asia') {
+    drawAnthillAsia(ctx, x, y, rng, onPath);
+    return;
+  }
+  if (style === 'desert') {
+    drawAnthillDesert(ctx, x, y, rng, onPath);
+    return;
+  }
+  if (style === 'mountains') {
+    drawAnthillMountains(ctx, x, y, rng, onPath);
+    return;
+  }
+  if (style === 'jungle') {
+    drawAnthillJungle(ctx, x, y, rng, onPath);
+    return;
+  }
+  if (style === 'snow') {
+    drawAnthillSnow(ctx, x, y, rng, onPath);
+    return;
+  }
+  if (style === 'forest') {
+    drawAnthillForest(ctx, x, y, rng, onPath);
+    return;
+  }
+  drawAnthillMeadow(ctx, x, y, rng, onPath);
+}
+
+/** Сам холм муравейника: земля с крапинами, малая нора и главный вход. */
+export function anthillMound(ctx: Ctx, x: number, y: number, rng: Rng): void {
   drawShadow(ctx, x, y + 40, 105, 22, 0.22);
   outline(ctx, 3.5);
   ctx.beginPath();
@@ -1066,14 +2031,6 @@ export function drawAnthill(ctx: Ctx, x: number, y: number, rng: Rng): void {
   fs(ctx, '#3a2412');
   ctx.fillStyle = '#140903';
   ell(ctx, x, y + 5, 17, 8);
-  ctx.fill();
-  twig(ctx, x + 40, y - 30, x + 78, y - 52, 4);
-  twig(ctx, x - 70, y - 10, x - 96, y - 30, 3.5);
-  for (let i = 0; i < 7; i++) grassTuft(ctx, x - 90 + i * 30 + rng.range(-6, 6), y + 36 + rng.range(-4, 6), rng);
-  twig(ctx, x + 28, y - 44, x + 28, y - 125, 4);
-  pennant(ctx, x + 28, y - 125, 46, 26, PAL.flag);
-  ctx.fillStyle = PAL.honey;
-  circle(ctx, x + 44, y - 113, 5);
   ctx.fill();
 }
 
@@ -1945,7 +2902,7 @@ export function drawTerrain(ctx: Ctx, t: TerrainInput): void {
   if (theme.stump) drawStump(ctx, theme.stump.x, theme.stump.y, rng);
   if (theme.wall) drawWall(ctx, w, theme.wall.h, paths, rng, v, mr);
   if (theme.cave) drawCaveWalls(ctx, w, h, rng, v, mr);
-  drawAnthill(ctx, anthill.x, anthill.y, rng);
+  drawAnthill(ctx, anthill.x, anthill.y, rng, theme.biome ?? null, (px, py) => nearestPath(px, py) < 36);
   // Лёгкая виньетка: края экрана чуть темнее, середина поля светлее.
   if (!theme.cave) {
     const cx = (v.x0 + v.x1) / 2;
