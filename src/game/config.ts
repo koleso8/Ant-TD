@@ -71,7 +71,8 @@ export const TARGET_MODES: readonly TargetModeDef[] = [
 ];
 export type EnemyKind =
   | 'termite' | 'spider' | 'beetle' | 'wasp' | 'rhino' | 'soldierTermite' | 'blackAnt' | 'hornet' | 'slug' | 'queen'
-  | 'dragonfly' | 'leech' | 'bomber' | 'empress';
+  | 'dragonfly' | 'leech' | 'bomber' | 'empress' | 'scarab' | 'scorpion' | 'woodlouse' | 'grasshopper'
+  | 'centipede' | 'centipedeHalf' | 'armyAnt' | 'iceBug' | 'iceSnail' | 'silkworm' | 'cocoon' | 'silkMoth' | 'tick' | 'mantis' | 'firefly';
 
 export interface TowerLevel {
   cost: number;
@@ -256,6 +257,67 @@ export interface EnemyDef {
   explode?: { radius: number; damage: number };
   /** Босс: его нельзя держать дольше hold секунд, затем «Напор» (см. BossDef). */
   boss?: BossDef;
+  /**
+   * Шар перед собой (скарабей): пока цел, принимает на себя все удары, кроме яда; hp — прочность
+   * шара (растёт с hpMul, как и здоровье), разбит — враг идёт быстрее в boost раз.
+   */
+  ball?: { hp: number; boost: number };
+  /**
+   * Жало (скорпион): пока его держат, раз в every секунд вместо обычного удара жалит — урон
+   * в полтора раза больше, и защитник оглушён на stun секунд и отпускает врага.
+   */
+  sting?: { every: number; stun: number };
+  /**
+   * Сворачивание (мокрица): удар не слабее доли hit от полного здоровья (кроме яда) сворачивает
+   * её в шар на dur секунд — панцирь armor, скорость ×speedMul, удержать нельзя; развернувшись,
+   * cooldown секунд не сворачивается снова.
+   */
+  curl?: { hit: number; armor: number; speedMul: number; dur: number; cooldown: number };
+  /**
+   * Прыжок (кузнечик): когда его перехватывает солдат или герой, перепрыгивает заслон — за dur
+   * секунд пролетает dist px тропы, в полёте его не удержать; следующий прыжок через every секунд.
+   */
+  leap?: { every: number; dist: number; dur: number };
+  /** Распад (сколопендра): погибнув, оставляет на своём месте count врагов kind — они идут дальше. */
+  split?: { kind: EnemyKind; count: number };
+  /**
+   * Стая (армейские муравьи): каждый живой сородич в радиусе radius прибавляет perMate к скорости,
+   * но не больше max в сумме.
+   */
+  pack?: { radius: number; perMate: number; max: number };
+  /**
+   * Морозная аура (ледяной клоп): стреляющие башни ближе radius px перезаряжаются медленнее
+   * на долю slow; ауры нескольких врагов не складываются, берётся сильнейшая.
+   */
+  chill?: { radius: number; slow: number };
+  /**
+   * Ледяная дорожка (ледяная улитка): за собой оставляет на тропе лёд, он держится life секунд;
+   * наземные враги на льду, кроме самих улиток, идут быстрее на долю boost.
+   */
+  trail?: { life: number; boost: number };
+  /** Окукливание (гусеница шелкопряда): погибнув, оставляет на своём месте кокон — врага kind. */
+  pupate?: { kind: EnemyKind };
+  /**
+   * Вылупление (кокон): стоит на месте, заслон его не держит; через after секунд из него вылетает
+   * враг kind. Разбить кокон раньше — никто не вылетит.
+   */
+  hatch?: { kind: EnemyKind; after: number };
+  /**
+   * Присасывание (клещ): каждый его удар по защитнику лечит самого клеща на долю heal от урона,
+   * который защитник в самом деле получил (броня солдата режет и урон, и лечение).
+   */
+  drain?: { heal: number };
+  /**
+   * Взмах косами (богомол): его удар достаётся не только тому, кто его держит, но и всем
+   * защитникам ближе radius px от него.
+   */
+  cleave?: { radius: number };
+  /**
+   * Целебный свет (светлячок): остальные враги ближе radius px от него восстанавливают по rate
+   * здоровья в секунду (растёт с множителем здоровья, как и само здоровье); свет нескольких
+   * светлячков не складывается, берётся сильнейший.
+   */
+  mend?: { radius: number; rate: number };
 }
 
 /**
@@ -294,6 +356,60 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   bomber: {
     kind: 'bomber', name: 'Термит-подрывник', hp: 60, speed: 80, armor: 0, bounty: 7, livesCost: 1, flying: false, radius: 13,
     meleeDmg: [4, 6], meleeInterval: 1.0, explode: { radius: 64, damage: 45 },
+  },
+  scarab: {
+    kind: 'scarab', name: 'Скарабей', hp: 150, speed: 40, armor: 0.25, bounty: 16, livesCost: 1, flying: false, radius: 17,
+    meleeDmg: [8, 12], meleeInterval: 1.3, ball: { hp: 140, boost: 1.75 },
+  },
+  scorpion: {
+    kind: 'scorpion', name: 'Скорпион', hp: 110, speed: 66, armor: 0.2, bounty: 11, livesCost: 1, flying: false, radius: 15,
+    meleeDmg: [6, 10], meleeInterval: 1.2, sting: { every: 4, stun: 1.5 },
+  },
+  woodlouse: {
+    kind: 'woodlouse', name: 'Мокрица', hp: 170, speed: 50, armor: 0.15, bounty: 13, livesCost: 1, flying: false, radius: 15,
+    meleeDmg: [6, 10], meleeInterval: 1.2, curl: { hit: 0.1, armor: 0.7, speedMul: 1.6, dur: 3, cooldown: 4 },
+  },
+  grasshopper: {
+    kind: 'grasshopper', name: 'Горный кузнечик', hp: 95, speed: 78, armor: 0.05, bounty: 10, livesCost: 1, flying: false, radius: 14,
+    meleeDmg: [5, 8], meleeInterval: 1.0, leap: { every: 6, dist: 160, dur: 0.7 },
+  },
+  centipede: {
+    kind: 'centipede', name: 'Сколопендра', hp: 170, speed: 58, armor: 0.1, bounty: 8, livesCost: 2, flying: false, radius: 18,
+    meleeDmg: [9, 14], meleeInterval: 1.2, split: { kind: 'centipedeHalf', count: 2 },
+  },
+  centipedeHalf: { kind: 'centipedeHalf', name: 'Половинка сколопендры', hp: 65, speed: 82, armor: 0.1, bounty: 6, livesCost: 1, flying: false, radius: 12, meleeDmg: [5, 8], meleeInterval: 1.0 },
+  armyAnt: {
+    kind: 'armyAnt', name: 'Армейский муравей', hp: 32, speed: 78, armor: 0, bounty: 3, livesCost: 1, flying: false, radius: 9,
+    meleeDmg: [2, 4], meleeInterval: 0.8, pack: { radius: 56, perMate: 0.12, max: 0.6 },
+  },
+  iceBug: {
+    kind: 'iceBug', name: 'Ледяной клоп', hp: 150, speed: 44, armor: 0.3, bounty: 14, livesCost: 1, flying: false, radius: 15,
+    meleeDmg: [7, 11], meleeInterval: 1.3, chill: { radius: 120, slow: 0.4 },
+  },
+  iceSnail: {
+    kind: 'iceSnail', name: 'Ледяная улитка', hp: 210, speed: 30, armor: 0.35, bounty: 16, livesCost: 1, flying: false, radius: 20,
+    meleeDmg: [6, 10], meleeInterval: 1.5, trail: { life: 10, boost: 0.45 },
+  },
+  silkworm: {
+    kind: 'silkworm', name: 'Гусеница шелкопряда', hp: 150, speed: 44, armor: 0, bounty: 7, livesCost: 1, flying: false, radius: 16,
+    meleeDmg: [5, 8], meleeInterval: 1.3, pupate: { kind: 'cocoon' },
+  },
+  cocoon: {
+    kind: 'cocoon', name: 'Кокон шелкопряда', hp: 60, speed: 0, armor: 0.3, bounty: 4, livesCost: 1, flying: false, radius: 13,
+    meleeDmg: [0, 0], meleeInterval: 9, hatch: { kind: 'silkMoth', after: 4 },
+  },
+  silkMoth: { kind: 'silkMoth', name: 'Бабочка шелкопряда', hp: 85, speed: 100, armor: 0, bounty: 6, livesCost: 1, flying: true, radius: 15, meleeDmg: [0, 0], meleeInterval: 9 },
+  tick: {
+    kind: 'tick', name: 'Клещ', hp: 130, speed: 70, armor: 0.15, bounty: 9, livesCost: 1, flying: false, radius: 13,
+    meleeDmg: [9, 13], meleeInterval: 0.7, drain: { heal: 1 },
+  },
+  mantis: {
+    kind: 'mantis', name: 'Богомол', hp: 110, speed: 76, armor: 0, bounty: 12, livesCost: 1, flying: false, radius: 16,
+    meleeDmg: [30, 44], meleeInterval: 1.0, cleave: { radius: 38 },
+  },
+  firefly: {
+    kind: 'firefly', name: 'Светлячок', hp: 90, speed: 62, armor: 0, bounty: 14, livesCost: 1, flying: true, radius: 14,
+    meleeDmg: [0, 0], meleeInterval: 9, mend: { radius: 95, rate: 7 },
   },
   empress: {
     kind: 'empress', name: 'Королева термитов', hp: 5600, speed: 16, armor: 0.4, bounty: 800, livesCost: 20, flying: false, radius: 42,

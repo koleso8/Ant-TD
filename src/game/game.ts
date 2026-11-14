@@ -18,23 +18,29 @@ import { UI } from './ui';
 import { PAL } from '../render/palette';
 import { drawText } from '../render/text';
 import {
-  ANT_WORKER, circle, drawAnt, setTowerStyle, drawHammer, drawHardHat, drawLadder, drawRange, drawShadow, drawSporeCloud, drawTerrain, ell, leadRoom, pathLead, pennant, twig,
+  ANT_WORKER, circle, drawAnt, setTowerStyle, drawFireflyLight, drawHammer, drawHardHat, drawIceTrail, drawLadder, drawRange, drawShadow, drawSporeCloud, drawTerrain, ell, leadRoom, pathLead, pennant, twig,
 } from '../render/art';
 import { Enemy } from './enemy';
+import { Path } from './path';
+import { BESTIARY, bestiaryEntry } from './bestiary';
+import { BOON_EVERY, pickBoons, type BoonId } from './boons';
 import type { Builder, Construction } from './construction';
 import { installSprites } from '../render/sprites';
 import { drawSplash, drawSplashSign } from '../render/splash';
-import { detectLang, gameTitle, getLang, setLang, t, targetText, type Lang } from './i18n';
+import { boonText, detectLang, gameTitle, getLang, setLang, t, targetText, type Lang } from './i18n';
 import { audio } from '../engine/audio';
 import { enterFullscreen, exitFullscreen, isInstalledApp, isTouchDevice } from '../engine/device';
 import splashUrl from '../assets/sprites/splash.webp';
 
-export type GameState = 'title' | 'levels' | 'perks' | 'intro' | 'settings' | 'playing' | 'won' | 'lost';
+export type GameState = 'title' | 'levels' | 'perks' | 'intro' | 'settings' | 'bestiary' | 'playing' | 'won' | 'lost';
 /** Кампания из шести уровней, обучение на плацу или бесконечная осада на большой карте. */
 export type GameMode = 'campaign' | 'tutorial' | 'endless';
 
 /** Поля вокруг большой карты, до которых можно отвести камеру. */
 const MAP_MARGIN = 320;
+/** Сколько секунд висит всплывающая карточка нового врага; если за ней ждёт следующая — короче. */
+const FOE_TOAST_LIFE = 9;
+const FOE_TOAST_SHORT = 5;
 /** Предел пикселей фона большой карты: печётся целиком один раз, и телефону должно хватить памяти. */
 const BG_BUDGET = 8_000_000;
 export type Selection =
@@ -85,6 +91,32 @@ export class Game {
   settingsFrom: GameState = 'title';
   /** Подсказка, как поставить игру на главный экран (iPhone и iPad). */
   installHelp = false;
+  /** Откуда открыли меню «Враги»: туда и вернёмся. */
+  bestiaryFrom: GameState = 'levels';
+  /** Какая карточка выбрана в меню «Враги». */
+  bestiaryPick: EnemyKind = 'termite';
+  /** Развёрнутая карточка врага поверх боя: пока она открыта, бой стоит. */
+  foeCard: EnemyKind | null = null;
+  /** Дары бесконечной осады: три карточки на выбор; пока выбор открыт, бой стоит. */
+  boonOffer: BoonId[] | null = null;
+  /** За какую волну дар и когда открыт выбор (по часам интерфейса): карточки выезжают по очереди. */
+  boonWave = 0;
+  boonShown = 0;
+  /** Сколько раз дар уже предлагали в этом забеге. */
+  private boonsGiven = 0;
+  /** Взятый дар, по значку которого тапнули: верхняя подсказка говорит, что он даёт. */
+  boonPeek: BoonId | null = null;
+  /** Всплывающая карточка нового врага: age — сколько секунд она уже висит. */
+  foeToast: { kind: EnemyKind; age: number } | null = null;
+  /** Новые враги, чьи карточки ждут своей очереди. */
+  private foeQueue: EnemyKind[] = [];
+  /** Последний новый враг этого боя: меню «Враги» из паузы открывается на нём. */
+  private lastFoe: EnemyKind | null = null;
+  /** Встреченные виды: то же, что progress.seen, для быстрой проверки каждый кадр. */
+  private seen = new Set<EnemyKind>();
+  /** Образцы врагов для карточек: по одному на вид, стоят в начале координат. */
+  private readonly specimens = new Map<EnemyKind, Enemy>();
+  private specimenPath: Path | null = null;
   /** Камера: на обычных уровнях стоит, на большой карте двигается. */
   readonly camera = new Camera();
   /** Шаги обучения на учебном плацу; на других уровнях null. */
@@ -114,6 +146,7 @@ export class Game {
     installSprites();
     setLang(this.progress.settings.lang ?? detectLang());
     this.syncLangDom();
+    this.syncSeen();
     audio.setVolumes(this.progress.settings.music, this.progress.settings.sfx);
     this.splashImg.onload = () => { this.splash = null; };
     this.splashImg.src = splashUrl;
@@ -261,6 +294,13 @@ export class Game {
     this.armedSpell = null;
     this.hurtFlash = 0;
     this.newRecord = false;
+    this.boonOffer = null;
+    this.boonsGiven = 0;
+    this.boonPeek = null;
+    this.foeCard = null;
+    this.foeToast = null;
+    this.foeQueue = [];
+    this.lastFoe = null;
     this.uiFx.clear();
     this.tutorial = this.mode === 'tutorial' ? new Tutorial() : null;
     this.camHint = this.mode === 'endless' ? 12 : 0;
@@ -347,6 +387,142 @@ export class Game {
     if (this.state === 'settings') this.state = this.settingsFrom;
   }
 
+  // ───────────── дары бесконечной осады ─────────────
+
+  /**
+   * Счёт отбитых волн перевалил за очередной десяток: бой встаёт, игрок выбирает один дар из трёх.
+   * Счёт тот же, что у рекорда (World.clearedWaves): медленный босс десятой волны ползёт по спирали
+   * минутами, и если ждать его гибели, дар приходил бы только к двадцатой волне.
+   */
+  private offerBoons(): void {
+    if (this.mode !== 'endless' || this.boonOffer || this.world.state !== 'playing') return;
+    if (Math.floor(this.world.clearedWaves / BOON_EVERY) <= this.boonsGiven) return;
+    const offer = pickBoons(this.world, 3);
+    this.boonsGiven++;
+    if (!offer.length) return;
+    this.boonOffer = offer;
+    this.boonWave = this.boonsGiven * BOON_EVERY;
+    this.boonShown = this.clock;
+    this.selected = null;
+    this.pendingSpec = null;
+    this.armedSpell = null;
+    this.boonPeek = null;
+    audio.play('upgrade');
+  }
+
+  /** Тап по карточке дара (или клавиша 1–3): дар действует сразу, бой идёт дальше. */
+  chooseBoon(i: number): void {
+    const id = this.boonOffer?.[i];
+    // Карточка ещё выезжает: случайный тап по полю в этот миг дар не выбирает.
+    if (!id || this.clock - this.boonShown < 0.6) return;
+    this.world.takeBoon(id);
+    this.boonOffer = null;
+    this.uiFx.text(boonText(id, this.world).name, 640, 300, PAL.uiGold, 30);
+    audio.play('done');
+  }
+
+  /** Тап по значку взятого дара: подсказка висит до следующего тапа. */
+  peekBoon(id: BoonId): void {
+    this.boonPeek = id;
+    this.selected = null;
+    this.pendingSpec = null;
+  }
+
+  // ───────────── карточки врагов ─────────────
+
+  /** Встречал ли игрок этот вид: его карточка открыта в меню «Враги». */
+  hasSeen(kind: EnemyKind): boolean {
+    return this.seen.has(kind);
+  }
+
+  private syncSeen(): void {
+    this.seen = new Set(this.progress.seen);
+  }
+
+  /**
+   * Новые виды на поле: отметить в сохранении и поставить карточку в очередь. На обучении всё
+   * объясняет воевода, поэтому там виды отмечаются молча.
+   */
+  private noticeEnemies(): void {
+    let fresh = false;
+    for (const e of this.world.enemies) {
+      const k = e.def.kind;
+      if (this.seen.has(k)) continue;
+      this.seen.add(k);
+      this.progress.seen.push(k);
+      fresh = true;
+      if (this.mode !== 'tutorial' && bestiaryEntry(k)) this.foeQueue.push(k);
+    }
+    if (fresh) saveProgress(this.progress);
+  }
+
+  /** Всплывающая карточка висит несколько секунд и уступает место следующей из очереди. */
+  private updateFoeToast(dt: number): void {
+    const cur = this.foeToast;
+    if (cur) {
+      cur.age += dt;
+      if (cur.age >= this.foeToastLife) this.foeToast = null;
+    }
+    const next = this.foeToast ? undefined : this.foeQueue.shift();
+    if (next) {
+      this.foeToast = { kind: next, age: 0 };
+      this.lastFoe = next;
+      audio.play('notice');
+    }
+  }
+
+  /** Сколько секунд отведено нынешней всплывающей карточке. */
+  get foeToastLife(): number {
+    return this.foeQueue.length ? FOE_TOAST_SHORT : FOE_TOAST_LIFE;
+  }
+
+  /** Тап по всплывающей карточке: развернуть её, бой при этом встаёт. */
+  openFoeCard(kind: EnemyKind): void {
+    if (this.state !== 'playing') return;
+    this.foeCard = kind;
+    if (this.foeToast?.kind === kind) this.foeToast = null;
+  }
+
+  closeFoeCard(): void {
+    this.foeCard = null;
+  }
+
+  /** Меню «Враги»: с экрана кампании или из паузы. Из боя открывается на последнем новом враге. */
+  toBestiary(): void {
+    if (this.state === 'bestiary') return;
+    this.bestiaryFrom = this.state;
+    if (this.state === 'playing' && this.lastFoe) this.bestiaryPick = this.lastFoe;
+    else if (!this.seen.has(this.bestiaryPick)) this.bestiaryPick = BESTIARY.find((e) => this.seen.has(e.kind))?.kind ?? BESTIARY[0].kind;
+    this.state = 'bestiary';
+  }
+
+  closeBestiary(): void {
+    if (this.state === 'bestiary') this.state = this.bestiaryFrom;
+  }
+
+  /** Образец врага для карточки: шагает на месте в точке (x, y), увеличен в k раз, без полосок и значков. */
+  drawSpecimen(ctx: CanvasRenderingContext2D, kind: EnemyKind, x: number, y: number, k: number, angle = 0): void {
+    let e = this.specimens.get(kind);
+    if (!e) {
+      this.specimenPath ??= new Path([{ x: 0, y: 0 }, { x: 100, y: 0 }]);
+      e = new Enemy(kind, 1, this.specimenPath);
+      e.lane = 0;
+      e.bob = 0;
+      this.specimens.set(kind, e);
+    }
+    e.x = 0;
+    e.y = 0;
+    e.angle = e.pathAngle = angle;
+    e.legPhase = this.clock * e.def.speed * 0.14;
+    // Кокон в карточке целый: срок едва пошёл.
+    if (e.def.hatch) e.hatchTimer = e.def.hatch.after * 0.85;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(k, k);
+    e.draw(ctx, this.clock, true);
+    ctx.restore();
+  }
+
   showInstallHelp(): void {
     this.installHelp = true;
   }
@@ -410,6 +586,7 @@ export class Game {
     }
     this.progress = defaultProgress();
     saveProgress(this.progress);
+    this.syncSeen();
     this.resetArmed = false;
   }
 
@@ -557,10 +734,11 @@ export class Game {
   }
 
   private handleTap(p: Vec): void {
-    if (this.state !== 'playing' || this.paused) {
+    if (this.state !== 'playing' || this.paused || this.foeCard || this.boonOffer) {
       if (this.ui.tapOverlay(p)) audio.play('click');
       return;
     }
+    this.boonPeek = null;
     if (this.ui.tap(p)) { audio.play('click'); return; }
     this.pendingSpec = null;
     // Тап по полю: из координат экрана в координаты мира (на большой карте их двигает камера).
@@ -634,6 +812,25 @@ export class Game {
       if (k === 'Escape' || k === ' ' || k === 'Enter') this.closeInstallHelp();
       return;
     }
+    if (this.foeCard) {
+      if (k === 'Escape' || k === ' ' || k === 'Enter') this.closeFoeCard();
+      return;
+    }
+    if (this.boonOffer && this.state === 'playing' && !this.paused) {
+      // Выбор дара нельзя пропустить: работают только клавиши карточек.
+      if (k === '1' || k === '2' || k === '3') this.chooseBoon(Number(k) - 1);
+      return;
+    }
+    if (this.state === 'bestiary') {
+      // Стрелки листают карточки, Escape закрывает меню.
+      const move: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -6, ArrowDown: 6 };
+      const d = move[k];
+      if (d !== undefined) {
+        const i = BESTIARY.findIndex((e) => e.kind === this.bestiaryPick) + d;
+        if (i >= 0 && i < BESTIARY.length) this.bestiaryPick = BESTIARY[i].kind;
+      } else if (k === 'Escape') this.closeBestiary();
+      return;
+    }
     if (k === ' ') {
       switch (this.state) {
         case 'title': this.playFromTitle(); break;
@@ -693,14 +890,18 @@ export class Game {
 
   update(dt: number): void {
     this.clock += dt;
-    audio.setMusic(this.state === 'playing' || (this.state === 'settings' && this.settingsFrom === 'playing') ? 'battle' : 'menu');
+    const inBattle = this.state === 'playing' || (this.state === 'settings' && this.settingsFrom === 'playing')
+      || (this.state === 'bestiary' && this.bestiaryFrom === 'playing');
+    audio.setMusic(inBattle ? 'battle' : 'menu');
     if (this.hurtFlash > 0) this.hurtFlash -= dt;
     this.uiFx.update(dt);
-    if (this.state !== 'playing' || this.paused) {
+    // Развёрнутая карточка врага и выбор дара останавливают бой так же, как пауза.
+    if (this.state !== 'playing' || this.paused || this.foeCard || this.boonOffer) {
       this.effects.update(dt);
       return;
     }
     if (this.camHint > 0) this.camHint -= dt;
+    this.updateFoeToast(dt);
     if (this.tutorial) {
       this.tutorial.update(dt, this);
       // Обучение остановило время: мир стоит, а кнопки и тапы работают.
@@ -710,6 +911,8 @@ export class Game {
       }
     }
     for (let i = 0; i < this.speed && this.world.state === 'playing'; i++) this.world.step(dt);
+    this.noticeEnemies();
+    this.offerBoons();
     if (this.world.state === 'won') this.onWin();
     else if (this.world.state === 'lost') {
       this.state = 'lost';
@@ -739,6 +942,10 @@ export class Game {
     ctx.save();
     cam.apply(ctx);
     this.drawBackground(ctx);
+    // Ледяные дорожки улиток лежат на тропе, под всем остальным.
+    for (const p of this.world.paths) if (p.iceUntil > this.world.time) drawIceTrail(ctx, p.pts, p.ice, this.world.time);
+    // Целебный свет светлячков тоже лежит на земле: враги стоят в нём, а не под ним.
+    for (const e of this.enemies) if (e.def.mend && !e.dead) drawFireflyLight(ctx, e.x, e.y, e.def.mend.radius, this.clock + e.bob);
     this.drawIncoming(ctx, wv);
     if (this.mode === 'endless') this.drawEntranceFlags(ctx);
 

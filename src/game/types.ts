@@ -34,6 +34,7 @@ export interface SporeCloud {
 export interface Blocker {
   x: number;
   y: number;
+  hp: number;
   dead: boolean;
   target: Enemy | null;
   blocking: boolean;
@@ -47,7 +48,7 @@ export type SoundId =
   | 'click' | 'build' | 'hammer' | 'done' | 'upgrade' | 'sell' | 'noGold'
   | 'shotAcid' | 'shotCatapult' | 'impact' | 'acidHit' | 'spore' | 'hit'
   | 'die' | 'dieBig' | 'leak' | 'wave' | 'spellAcid' | 'spellRetinue' | 'spellSpores'
-  | 'summon' | 'ability' | 'fell' | 'stomp' | 'win' | 'lose';
+  | 'summon' | 'ability' | 'fell' | 'stomp' | 'win' | 'lose' | 'notice';
 
 /** То, что сущностям нужно знать об игре. Game реализует этот интерфейс. */
 export interface GameCtx {

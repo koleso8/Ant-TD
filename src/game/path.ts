@@ -19,6 +19,16 @@ export class Path {
   readonly pts: Vec[] = [];
   readonly cum: number[] = [];
   readonly length: number;
+  /**
+   * Лёд ледяной улитки: до какого времени мира (с) скользок отрезок тропы от точки i (0 — льда нет),
+   * самое позднее из этих времён (быстрый отказ, когда льда на тропе нет) и прибавка к скорости на льду.
+   */
+  readonly ice: Float64Array;
+  iceUntil = 0;
+  iceBoost = 0;
+  /** Другие тропы той же карты: где они идут по той же дороге, лёд у них общий. */
+  siblings: Path[] = [];
+  private readonly links = new Map<Path, Int32Array>();
 
   constructor(waypoints: readonly Vec[], cornerRadius = 22, step = 6) {
     const n = waypoints.length;
@@ -56,17 +66,71 @@ export class Path {
       this.cum.push(acc);
     }
     this.length = acc;
+    this.ice = new Float64Array(pts.length);
   }
 
-  at(d: number): { x: number; y: number; angle: number } {
-    d = clamp(d, 0, this.length);
+  /** Номер отрезка тропы, на который приходится дистанция d (уже в пределах тропы). */
+  private seg(d: number): number {
     let lo = 0;
     let hi = this.cum.length - 1;
     while (lo < hi - 1) {
       const mid = (lo + hi) >> 1;
       if (this.cum[mid] <= d) lo = mid; else hi = mid;
     }
-    if (lo >= this.pts.length - 1) lo = this.pts.length - 2;
+    return lo >= this.pts.length - 1 ? this.pts.length - 2 : lo;
+  }
+
+  /** Улитка проползла от from до to: эти отрезки тропы скользкие до времени until. */
+  layIce(from: number, to: number, until: number, boost: number): void {
+    const a = this.seg(clamp(from, 0, this.length));
+    const b = this.seg(clamp(to, 0, this.length));
+    for (let i = a; i <= b; i++) if (this.ice[i] < until) this.ice[i] = until;
+    if (until > this.iceUntil) this.iceUntil = until;
+    this.iceBoost = boost;
+  }
+
+  /**
+   * Для каждой точки этой тропы — номер точки тропы other на том же месте дороги или -1,
+   * если там тропы расходятся. Считается один раз, когда на other впервые появился лёд.
+   */
+  private linkTo(other: Path): Int32Array {
+    let l = this.links.get(other);
+    if (!l) {
+      l = new Int32Array(this.pts.length).fill(-1);
+      for (let i = 0; i < this.pts.length; i++) {
+        const p = this.pts[i];
+        let bd = 8;
+        for (let j = 0; j < other.pts.length; j++) {
+          const dd = dist(p.x, p.y, other.pts[j].x, other.pts[j].y);
+          if (dd < bd) { bd = dd; l[i] = j; }
+        }
+      }
+      this.links.set(other, l);
+    }
+    return l;
+  }
+
+  /**
+   * Прибавка к скорости на льду в точке d в момент now; 0 — льда там нет. Лёд, который улитка
+   * положила на соседней тропе, считается и здесь, где тропы идут по одной дороге.
+   */
+  iceAt(d: number, now: number): number {
+    let any = this.iceUntil > now;
+    for (const o of this.siblings) if (o.iceUntil > now) any = true;
+    if (!any) return 0;
+    const i = this.seg(clamp(d, 0, this.length));
+    if (this.ice[i] > now) return this.iceBoost;
+    for (const o of this.siblings) {
+      if (o.iceUntil <= now) continue;
+      const j = this.linkTo(o)[i];
+      if (j >= 0 && o.ice[j] > now) return o.iceBoost;
+    }
+    return 0;
+  }
+
+  at(d: number): { x: number; y: number; angle: number } {
+    d = clamp(d, 0, this.length);
+    const lo = this.seg(d);
     const a = this.pts[lo];
     const b = this.pts[lo + 1];
     const seg = this.cum[lo + 1] - this.cum[lo] || 1;

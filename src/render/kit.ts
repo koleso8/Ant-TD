@@ -25,6 +25,16 @@ export function cylGrad(ctx: Ctx, x0: number, x1: number, t: Tone): CanvasGradie
   return g;
 }
 
+/**
+ * Направление на свет (экран: влево-вверх) в осях, повёрнутых на angle, — для снаряжения,
+ * которое рисуется в системе координат муравья, а свет должен оставаться слева сверху.
+ */
+export function lightDir(angle: number): [number, number] {
+  const ca = Math.cos(angle);
+  const sa = Math.sin(angle);
+  return [-0.7 * ca - 0.7 * sa, 0.7 * sa - 0.7 * ca];
+}
+
 /** Латунь: тёплый блик слева сверху, тёмная бронза в тени. */
 export function brass(ctx: Ctx, x0: number, y0: number, x1: number, y1: number): CanvasGradient {
   const g = ctx.createLinearGradient(x0, y0, x1, y1);

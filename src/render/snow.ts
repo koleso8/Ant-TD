@@ -7,7 +7,7 @@
 import { TAU, type Vec } from '../engine/math';
 import type { Rng } from '../engine/rng';
 import { ANT_WORKER, anthillMound, circle, drawAnt, drawShadow, ell, fs, outline, pennant } from './art';
-import { antCrest, beam, jit, woodPole, type WoodTone } from './kit';
+import { antCrest, beam, jit, lightDir, woodPole, type WoodTone } from './kit';
 import { PAL } from './palette';
 
 type Ctx = CanvasRenderingContext2D;
@@ -575,6 +575,184 @@ function furShield(ctx: Ctx, x: number, y: number, r: number): void {
   circle(ctx, x, y, r * 0.3);
   fs(ctx, '#8a9099');
   snowCap(ctx, x, y - r + 0.8, r * 0.55, 1.8);
+}
+
+/** Светлый мех опушки: сливочный с тёплой тенью — на красном муравье и у белого снега читается контуром. */
+const CREAM: Fur = { hi: '#fbf3e2', base: '#e2cfa8', lo: '#a8865e' };
+
+/**
+ * Овальный дощатый щит на спине солдата Снегов (оси: x — вперёд по телу): доски вдоль тела,
+ * поперёк синий войлочный пояс с красными кантами, по кромке меховая опушка, как у щитов на
+ * казарме акта, но без умбона (иначе мишень). Щит из шкуры на раме из жердей читался ящиком.
+ */
+function furBackShield(ctx: Ctx, x: number, y: number, r: number, angle: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.9);
+  ctx.rotate(angle);
+  const [lx, ly] = lightDir(angle);
+  const rx = r * 1.02;
+  const ry = r * 0.8;
+  outline(ctx, 2);
+  ell(ctx, 0, 0, rx, ry);
+  const g = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+  g.addColorStop(0, '#a87c52');
+  g.addColorStop(0.55, '#7a5434');
+  g.addColorStop(1, '#4a3018');
+  fs(ctx, g);
+  ctx.save();
+  ell(ctx, 0, 0, rx, ry);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(30,15,5,0.5)';
+  ctx.lineWidth = Math.max(0.6, r * 0.08);
+  for (const py of [-0.42, 0.05, 0.46]) {
+    ctx.beginPath(); ctx.moveTo(-rx, py * r); ctx.lineTo(rx, py * r - r * 0.03); ctx.stroke();
+  }
+  ctx.fillStyle = '#c8352a';
+  ctx.fillRect(-r * 0.24, -r, r * 0.62, r * 2);
+  ctx.fillStyle = '#2c4a8e';
+  ctx.fillRect(-r * 0.16, -r, r * 0.46, r * 2);
+  ctx.fillStyle = 'rgba(160,190,240,0.45)';
+  ctx.fillRect(-r * 0.16, -r, r * 0.1, r * 2);
+  ctx.restore();
+  // Меховая опушка: тёмная подложка и светлый мех клочками.
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = r * 0.34;
+  ell(ctx, 0, 0, rx - r * 0.06, ry - r * 0.06);
+  ctx.stroke();
+  ctx.strokeStyle = CREAM.base;
+  ctx.lineWidth = r * 0.2;
+  ctx.setLineDash([r * 0.16, r * 0.1]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(255,250,238,0.7)';
+  ctx.lineWidth = r * 0.07;
+  ctx.beginPath(); ctx.ellipse(0, 0, rx - r * 0.06, ry - r * 0.06, 0, Math.atan2(ly, lx) - 0.9, Math.atan2(ly, lx) + 0.9); ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Капюшон парки на солдате (вид сверху, оси: x — вперёд): синий войлок каплей стекает назад на
+ * грудь, спереди вокруг головы пушистая светлая опушка полумесяцем, ближе к затылку поперёк
+ * красная полоса с белой нитью. Круглые шапки сверху давали кольцо с центром и читались глазом
+ * (бурая ушанка к тому же сливалась с муравьём), поэтому капюшон вытянут и без швов вдоль.
+ */
+function soldierHood(ctx: Ctx, x: number, y: number, r: number, angle: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.9);
+  ctx.rotate(angle);
+  const [lx, ly] = lightDir(angle);
+  const hood = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(r * 0.75, -r * 0.92);
+    ctx.bezierCurveTo(r * 0.1, -r * 1.02, -r * 0.8, -r * 0.7, -r * 1.3, -r * 0.18);
+    ctx.quadraticCurveTo(-r * 1.45, 0, -r * 1.3, r * 0.18);
+    ctx.bezierCurveTo(-r * 0.8, r * 0.7, r * 0.1, r * 1.02, r * 0.75, r * 0.92);
+    ctx.quadraticCurveTo(r * 0.95, 0, r * 0.75, -r * 0.92);
+    ctx.closePath();
+  };
+  // Тень капюшона на теле.
+  ctx.save();
+  ctx.translate(-lx * r * 0.25, -ly * r * 0.25);
+  hood();
+  ctx.fillStyle = 'rgba(35,15,5,0.28)';
+  ctx.fill();
+  ctx.restore();
+  hood();
+  outline(ctx, 1.7);
+  const g = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+  g.addColorStop(0, '#7196dc');
+  g.addColorStop(0.5, '#3a5ea8');
+  g.addColorStop(1, '#1c3268');
+  fs(ctx, g);
+  ctx.save();
+  hood();
+  ctx.clip();
+  // Складки войлока к затылку (не по оси — по бокам).
+  ctx.strokeStyle = 'rgba(15,25,60,0.45)';
+  ctx.lineWidth = r * 0.09;
+  for (const sd of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(r * 0.2, sd * r * 0.62); ctx.quadraticCurveTo(-r * 0.4, sd * r * 0.5, -r * 0.95, sd * r * 0.2); ctx.stroke();
+  }
+  // Красная полоса поперёк с белой нитью.
+  ctx.fillStyle = '#c8352a';
+  ctx.fillRect(-r * 0.78, -r * 1.2, r * 0.34, r * 2.4);
+  ctx.fillStyle = '#f4ece0';
+  ctx.fillRect(-r * 0.64, -r * 1.2, r * 0.07, r * 2.4);
+  ctx.restore();
+  // Меховая опушка полумесяцем вокруг лица.
+  const fur = (): void => {
+    ctx.beginPath();
+    const n = 14;
+    for (let i = 0; i <= n; i++) {
+      const a = -1.75 + (i / n) * 3.5;
+      const bump = i % 2 ? 1.08 : 0.96;
+      const px = r * 0.5 + Math.cos(a) * r * 0.5 * bump;
+      const py = Math.sin(a) * r * 0.98 * bump;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    for (let i = 10; i >= 0; i--) {
+      const a = -1.6 + (i / 10) * 3.2;
+      ctx.lineTo(r * 0.42 + Math.cos(a) * r * 0.22, Math.sin(a) * r * 0.66);
+    }
+    ctx.closePath();
+  };
+  ctx.lineJoin = 'round';
+  fur();
+  outline(ctx, 1.4);
+  const fg = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+  fg.addColorStop(0, CREAM.hi);
+  fg.addColorStop(0.6, CREAM.base);
+  fg.addColorStop(1, CREAM.lo);
+  fs(ctx, fg);
+  ctx.strokeStyle = 'rgba(120,90,55,0.5)';
+  ctx.lineWidth = Math.max(0.5, r * 0.08);
+  for (let i = 0; i < 7; i++) {
+    const a = -1.4 + (i / 6) * 2.8 + (jit(i + 3) - 0.5) * 0.2;
+    const px = r * 0.5 + Math.cos(a) * r * 0.36;
+    const py = Math.sin(a) * r * 0.78;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(a) * r * 0.18, py + Math.sin(a) * r * 0.18); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * Снаряжение солдата Снегов поверх спрайта (по эталону Пустыни): синий капюшон парки с меховой
+ * опушкой; у броненосцев на спине дощатый щит с меховой опушкой; у жнецов в жвалах гарпун
+ * с костяным зазубренным наконечником.
+ */
+export function drawSoldierGearSnow(ctx: Ctx, x: number, y: number, angle: number, s: number, variant: number, armored: boolean): void {
+  const k = s / 0.8;
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle) * 0.9;
+  const sx = -Math.sin(angle);
+  const sy = Math.cos(angle) * 0.9;
+  if (armored) {
+    const bx = x - fx * 4 * k;
+    const by = y - fy * 4 * k;
+    ctx.lineCap = 'round';
+    for (const [col, lw] of [[OUT, 3.2], [FUR.lo, 1.7]] as const) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw * k;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(bx + sx * d * 6 * k, by + sy * d * 6 * k);
+        ctx.lineTo(x + fx * 4.5 * k + sx * d * 5.5 * k, y + fy * 4.5 * k + sy * d * 5.5 * k);
+        ctx.stroke();
+      }
+    }
+    furBackShield(ctx, bx, by, 8.3 * k, angle);
+  }
+  if (variant === 2) {
+    ctx.save();
+    ctx.translate(x + fx * 19 * k, y + fy * 19 * k);
+    ctx.rotate(angle);
+    ctx.scale(k * 1.15, k * 1.15);
+    harpoon(ctx, -3, -7, 3, 9);
+    ctx.restore();
+  }
+  soldierHood(ctx, x + fx * 10.5 * k, y + fy * 10.5 * k, 6.6 * k, angle);
 }
 
 /** Сани: загнутые полозья, перекладины, тюк шкур и ящик, обвязка. */

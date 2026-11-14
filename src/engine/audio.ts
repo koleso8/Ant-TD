@@ -175,6 +175,10 @@ class AudioEngine {
         this.tone(bus, t + 0.12, 1320, 0.32, 0.2, 'triangle');
         this.tone(bus, t + 0.12, 660, 0.3, 0.08, 'sine');
         break;
+      case 'notice':
+        // Новый враг: три мягкие ноты вверх, тише и ниже, чем у готовой постройки.
+        [587, 784, 1175].forEach((f, i) => this.tone(bus, t + i * 0.1, f, 0.22, 0.16, 'triangle'));
+        break;
       case 'upgrade':
         [660, 880, 1320].forEach((f, i) => this.tone(bus, t + i * 0.09, f, 0.35, 0.18, 'triangle'));
         break;

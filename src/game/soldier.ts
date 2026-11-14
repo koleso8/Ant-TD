@@ -1,7 +1,7 @@
 import { angleTo, dist, lerpAngle, roll, TAU, type Vec } from '../engine/math';
 import type { GameCtx } from './types';
 import type { Enemy } from './enemy';
-import { ANT_SOLDIER, drawAnt, drawDaze, drawHealthBar, drawShadow, pebble } from '../render/art';
+import { ANT_SOLDIER, drawAnt, drawDaze, drawHealthBar, drawShadow, drawSoldierGear } from '../render/art';
 
 const ENGAGE_R = 70;
 const LEASH_R = 130;
@@ -17,6 +17,8 @@ export interface SoldierHost {
   rallyAngle: number;
   stats: { soldierHp?: number; soldierDmg?: readonly [number, number]; respawn?: number };
   specDef: { soldierArmor?: number } | null;
+  /** Вариант казармы: 1 — броненосцы, 2 — жнецы; у дружины заклинания нет. */
+  variant?: number;
 }
 
 /** Муравей-солдат: держит врага на тропе, бьёт в ближнем бою, возрождается у своего хозяина. */
@@ -176,14 +178,7 @@ export class Soldier {
     if (this.dead) return;
     drawShadow(ctx, this.x, this.y + 4, 12, 5);
     drawAnt(ctx, this.x, this.y, this.angle, 0.8, ANT_SOLDIER, this.moving ? this.legPhase : 0, true);
-    if (this.host.specDef?.soldierArmor) {
-      // Броненосцы: панцирь из гальки на спине.
-      ctx.save();
-      ctx.translate(this.x, this.y);
-      ctx.rotate(this.angle);
-      pebble(ctx, -3, 0, 8, 5.5);
-      ctx.restore();
-    }
+    drawSoldierGear(ctx, this.x, this.y, this.angle, 0.8, this.host.variant ?? 0, !!this.host.specDef?.soldierArmor);
     if (this.staggerTimer > 0) drawDaze(ctx, this.x, this.y - 22, performance.now() / 1000);
     if (this.hp < this.maxHp) drawHealthBar(ctx, this.x, this.y - 24, 26, this.hp / this.maxHp);
   }

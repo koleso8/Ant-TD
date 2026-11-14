@@ -671,6 +671,104 @@ function bronzeShield(ctx: Ctx, x: number, y: number, r: number): void {
   ctx.fill();
 }
 
+/**
+ * Бронзовый щит на спине солдата: гладкое поле без умбона, чеканный крест на четыре поля по ходу
+ * тела, заклёпки по кромке, блик слева сверху (без колец и точки в центре — иначе выходит мишень).
+ */
+function backShield(ctx: Ctx, x: number, y: number, r: number, angle: number): void {
+  outline(ctx, 1.8);
+  ell(ctx, x, y, r, r * 0.92);
+  fs(ctx, brass(ctx, x - r, y - r, x + r, y + r));
+  ctx.save();
+  ell(ctx, x, y, r, r * 0.92);
+  ctx.clip();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.strokeStyle = 'rgba(110,65,15,0.75)';
+  ctx.lineWidth = r * 0.22;
+  ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(r, 0); ctx.moveTo(0, -r); ctx.lineTo(0, r); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,240,180,0.55)';
+  ctx.lineWidth = r * 0.07;
+  ctx.beginPath(); ctx.moveTo(-r, -r * 0.12); ctx.lineTo(r, -r * 0.12); ctx.moveTo(-r * 0.12, -r); ctx.lineTo(-r * 0.12, r); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = '#7a4e12';
+  for (let i = 0; i < 6; i++) {
+    const a = angle + Math.PI / 4 + (i / 6) * TAU;
+    circle(ctx, x + Math.cos(a) * r * 0.8, y + Math.sin(a) * r * 0.74, Math.max(0.6, r * 0.09));
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255,255,240,0.55)';
+  ell(ctx, x - r * 0.4, y - r * 0.42, r * 0.3, r * 0.14, -0.5);
+  ctx.fill();
+}
+
+/**
+ * Снаряжение солдата Пустыни поверх спрайта (s — масштаб муравья, у солдата 0.8): индиговый
+ * тюрбан на голове; у броненосцев на спине круглый бронзовый щит на кожаных ремнях; у жнецов
+ * в жвалах сабля поперёк, клинок изогнут вперёд. Голова спрайта — в 13,5·s/0.8 px впереди центра,
+ * по вертикали перспектива ~0,9.
+ */
+export function drawSoldierGearDesert(ctx: Ctx, x: number, y: number, angle: number, s: number, variant: number, armored: boolean): void {
+  const k = s / 0.8;
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle) * 0.9;
+  const sx = -Math.sin(angle);
+  const sy = Math.cos(angle) * 0.9;
+  if (armored) {
+    const bx = x - fx * 5 * k;
+    const by = y - fy * 5 * k;
+    ctx.lineCap = 'round';
+    for (const [col, lw] of [[OUT, 3.4], ['#7a4a22', 1.8]] as const) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw * k;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(bx + sx * d * 7 * k, by + sy * d * 7 * k);
+        ctx.lineTo(x + fx * 4 * k + sx * d * 5.5 * k, y + fy * 4 * k + sy * d * 5.5 * k);
+        ctx.stroke();
+      }
+    }
+    backShield(ctx, bx, by, 8 * k, angle);
+  }
+  if (variant === 2) soldierSabre(ctx, x + fx * 19 * k, y + fy * 19 * k, angle, k);
+  turban(ctx, x + fx * 10.5 * k, y + fy * 10.5 * k, 6.6 * k, angle);
+}
+
+/** Сабля в жвалах солдата: рукоять у рта, клинок поперёк вправо и дугой вперёд, светлая сталь. */
+function soldierSabre(ctx: Ctx, x: number, y: number, angle: number, k: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(k, k);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 3.6;
+  ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(0, 1); ctx.stroke();
+  ctx.strokeStyle = '#6b3f1f';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-1.6, 1.5);
+  ctx.quadraticCurveTo(-1, 12, 8, 19);
+  ctx.quadraticCurveTo(2.2, 11, 2.2, 1.5);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(-2, 0, 4, 0);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(1, '#a4b2bc');
+  outline(ctx, 1.3);
+  fs(ctx, g);
+  ctx.strokeStyle = 'rgba(80,95,110,0.55)';
+  ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(0.6, 3); ctx.quadraticCurveTo(1, 11, 6.5, 17); ctx.stroke();
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 3.2;
+  ctx.beginPath(); ctx.moveTo(-3.6, 1.2); ctx.lineTo(4.2, 1.2); ctx.stroke();
+  ctx.strokeStyle = '#e0b13c';
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  ctx.restore();
+}
+
 /** Полосатый шатёр каравана на крыше: конус из индиговых и кремовых клиньев, красная бахрома, вымпел на шесте. */
 function caravanTent(ctx: Ctx, cx: number, base: number, r: number, h: number): void {
   const ry = r * 0.34;

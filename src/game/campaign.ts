@@ -112,6 +112,11 @@ const ACT_SPECS: ReadonlyArray<Omit<ActDef, 'from' | 'to'>> = [
 /** Враги акта: вид, с какой карты акта появляется, вес в волнах; и боссы финальных волн. */
 interface Roster {
   kinds: ReadonlyArray<readonly [EnemyKind, number, number]>;
+  /**
+   * Свои враги акта (новые, которых нет в других актах): в каждой третьей волне их вес
+   * вчетверо выше, чтобы они точно выходили на каждой карте, где уже доступны.
+   */
+  signature?: readonly EnemyKind[];
 }
 
 const ALL: Roster['kinds'] = [
@@ -127,12 +132,12 @@ function flavored(boost: Partial<Record<EnemyKind, number>>): Roster['kinds'] {
 const ROSTERS: readonly Roster[] = [
   { kinds: [['termite', 0, 3], ['spider', 0, 2], ['blackAnt', 2, 2], ['wasp', 2, 1.6], ['soldierTermite', 3, 1.8], ['beetle', 4, 1.4], ['hornet', 5, 1.2], ['slug', 6, 0.7]] },
   { kinds: [['termite', 0, 3], ['spider', 0, 2], ['blackAnt', 0, 2], ['wasp', 0, 1.6], ['soldierTermite', 0, 1.8], ['beetle', 2, 1.4], ['bomber', 2, 1.4], ['dragonfly', 3, 1.2], ['leech', 4, 0.8], ['hornet', 4, 1.2], ['slug', 5, 0.7]] },
-  { kinds: flavored({ beetle: 1.6, spider: 1.5, wasp: 1.4, leech: 0.3, slug: 0.4 }) },
-  { kinds: flavored({ soldierTermite: 1.6, beetle: 1.5, hornet: 1.4, dragonfly: 0.6 }) },
-  { kinds: flavored({ leech: 1.8, slug: 1.6, dragonfly: 1.5, spider: 1.3, bomber: 0.7 }) },
-  { kinds: flavored({ blackAnt: 1.5, soldierTermite: 1.5, beetle: 1.3, wasp: 0.5, dragonfly: 0.5 }) },
-  { kinds: flavored({ termite: 1.4, bomber: 1.6, beetle: 1.2, hornet: 1.2 }) },
-  { kinds: flavored({ hornet: 1.5, dragonfly: 1.4, soldierTermite: 1.3, bomber: 1.2 }) },
+  { kinds: [...flavored({ beetle: 1.6, spider: 1.5, wasp: 1.4, leech: 0.3, slug: 0.4 }), ['scarab', 2, 2], ['scorpion', 0, 1.6]], signature: ['scarab'] },
+  { kinds: [...flavored({ soldierTermite: 1.6, beetle: 1.5, hornet: 1.4, dragonfly: 0.6 }), ['woodlouse', 0, 1.8], ['grasshopper', 1, 1.6]], signature: ['woodlouse', 'grasshopper'] },
+  { kinds: [...flavored({ leech: 1.8, slug: 1.6, dragonfly: 1.5, spider: 1.3, bomber: 0.7 }), ['centipede', 0, 1.8], ['armyAnt', 1, 0.8]], signature: ['centipede', 'armyAnt'] },
+  { kinds: [...flavored({ blackAnt: 1.5, soldierTermite: 1.5, beetle: 1.3, wasp: 0.5, dragonfly: 0.5 }), ['iceBug', 0, 2], ['iceSnail', 1, 3]], signature: ['iceBug', 'iceSnail'] },
+  { kinds: [...flavored({ termite: 1.4, bomber: 1.6, beetle: 1.2, hornet: 1.2 }), ['silkworm', 0, 1.8], ['tick', 1, 1.6]], signature: ['silkworm', 'tick'] },
+  { kinds: [...flavored({ hornet: 1.5, dragonfly: 1.4, soldierTermite: 1.3, bomber: 1.2 }), ['mantis', 0, 2], ['firefly', 1, 2]], signature: ['mantis', 'firefly'] },
 ];
 
 /** Здоровье врагов по актам: в дальних актах они крепче, а не только многочисленнее. */
@@ -141,7 +146,7 @@ const ACT_HP: readonly number[] = [1, 1.05, 1.15, 1.25, 1.35, 1.45, 1.55, 1.7];
 /** Промежуток между врагами группы на первых волнах, с. */
 const INTERVAL: Partial<Record<EnemyKind, number>> = {
   termite: 0.7, spider: 0.9, blackAnt: 0.7, wasp: 1.0, soldierTermite: 1.3, beetle: 1.8,
-  bomber: 0.9, hornet: 1.4, slug: 3.5, dragonfly: 1.5, leech: 3.0,
+  bomber: 0.9, hornet: 1.4, slug: 3.5, dragonfly: 1.5, leech: 3.0, scarab: 1.9, scorpion: 1.0, woodlouse: 1.2, grasshopper: 0.9, centipede: 2.2, armyAnt: 0.3, iceBug: 2.0, iceSnail: 3.0, silkworm: 1.6, tick: 0.9, mantis: 1.5, firefly: 2.2,
 };
 
 /** Боссы последней волны карты: чем дальше по акту и по кампании, тем тяжелее. */
@@ -168,7 +173,7 @@ function pick<T>(rng: Rng, items: readonly T[], weights: readonly number[]): T {
 /**
  * Волны сгенерированной карты. Детерминированы: зерно карты и её множитель угрозы diff всегда
  * дают те же волны. Угроза волны растёт с номером; каждая пятая волна воздушная, каждая седьмая
- * бронированная, в последней выходят боссы. На картах с несколькими тропами группы чередуют тропы.
+ * бронированная, в каждой третьей чаще свой враг акта, в последней выходят боссы. На картах с несколькими тропами группы чередуют тропы.
  */
 export function mapWaves(m: MapGen): WaveDef[] {
   const rng = new Rng(m.seed * 7 + 13);
@@ -191,10 +196,12 @@ export function mapWaves(m: MapGen): WaveDef[] {
     }
     const air = n % 5 === 0;
     const armor = n % 7 === 0;
+    const own = n % 3 === 0 ? ROSTERS[m.act].signature : undefined;
     const weights = kinds.map(([k, , w]) => {
       let v = w;
+      if (own?.includes(k)) v *= 4;
       if (air && (k === 'wasp' || k === 'hornet' || k === 'dragonfly')) v *= 3;
-      if (armor && (k === 'beetle' || k === 'soldierTermite')) v *= 3;
+      if (armor && (k === 'beetle' || k === 'soldierTermite' || k === 'scarab')) v *= 3;
       return v;
     });
     const nGroups = Math.min(4, 1 + Math.floor((n + 1) / 4));

@@ -8,14 +8,15 @@ import { Rng } from '../engine/rng';
 import type { Path } from '../game/path';
 import { CELL, type TowerKind } from '../game/config';
 import type { Biome, LevelTheme } from '../game/levels';
+import { lightDir } from './kit';
 import { PAL } from './palette';
 import { biomeBlob, biomeCluster, biomeDecor, biomeGround, biomeTuft, crossings, drawIce, drawRavine, koiStream, redBridge, ropeBridge } from './biomes';
-import { drawAnthillDesert, drawTowerAcidDesert, drawTowerBarracksDesert, drawTowerCatapultDesert, drawTowerSporeDesert } from './desert';
-import { drawAnthillForest, drawTowerAcidForest, drawTowerBarracksForest, drawTowerCatapultForest, drawTowerSporeForest } from './forest';
-import { drawAnthillMeadow, drawTowerAcidMeadow, drawTowerBarracksMeadow, drawTowerCatapultMeadow, drawTowerSporeMeadow } from './meadow';
-import { drawAnthillJungle, drawTowerAcidJungle, drawTowerBarracksJungle, drawTowerCatapultJungle, drawTowerSporeJungle } from './jungle';
-import { drawAnthillMountains, drawTowerAcidMountains, drawTowerBarracksMountains, drawTowerCatapultMountains, drawTowerSporeMountains } from './mountains';
-import { drawAnthillSnow, drawTowerAcidSnow, drawTowerBarracksSnow, drawTowerCatapultSnow, drawTowerSporeSnow } from './snow';
+import { drawAnthillDesert, drawSoldierGearDesert, drawTowerAcidDesert, drawTowerBarracksDesert, drawTowerCatapultDesert, drawTowerSporeDesert } from './desert';
+import { drawAnthillForest, drawSoldierGearForest, drawTowerAcidForest, drawTowerBarracksForest, drawTowerCatapultForest, drawTowerSporeForest } from './forest';
+import { drawAnthillMeadow, drawSoldierGearMeadow, drawTowerAcidMeadow, drawTowerBarracksMeadow, drawTowerCatapultMeadow, drawTowerSporeMeadow } from './meadow';
+import { drawAnthillJungle, drawSoldierGearJungle, drawTowerAcidJungle, drawTowerBarracksJungle, drawTowerCatapultJungle, drawTowerSporeJungle } from './jungle';
+import { drawAnthillMountains, drawSoldierGearMountains, drawTowerAcidMountains, drawTowerBarracksMountains, drawTowerCatapultMountains, drawTowerSporeMountains } from './mountains';
+import { drawAnthillSnow, drawSoldierGearSnow, drawTowerAcidSnow, drawTowerBarracksSnow, drawTowerCatapultSnow, drawTowerSporeSnow } from './snow';
 
 type Ctx = CanvasRenderingContext2D;
 type Fill = string | CanvasGradient;
@@ -129,7 +130,7 @@ export const ANT_SOLDIER: AntColors = { body: PAL.soldierBody, light: PAL.soldie
  * кадр нужного направления и возвращает true, иначе существо рисуется векторно.
  * Симуляция в Node рисовальщик не ставит и импортирует art.ts без картинок.
  */
-export type SpriteKind = 'antWorker' | 'antSoldier' | 'antHero' | 'antBlack' | 'termite' | 'termiteSoldier' | 'termiteBomber' | 'spider' | 'beetle' | 'rhino' | 'wasp' | 'hornet' | 'slug' | 'leech' | 'dragonfly' | 'queen' | 'empress';
+export type SpriteKind = 'antWorker' | 'antSoldier' | 'antHero' | 'antBlack' | 'termite' | 'termiteSoldier' | 'termiteBomber' | 'spider' | 'beetle' | 'rhino' | 'wasp' | 'hornet' | 'slug' | 'leech' | 'dragonfly' | 'queen' | 'empress' | 'scarab' | 'scorpion' | 'woodlouse' | 'grasshopper' | 'centipede' | 'centipedeHalf' | 'antArmy' | 'iceBug' | 'iceSnail' | 'silkworm' | 'silkMoth' | 'tick' | 'mantis' | 'firefly';
 export type SpriteDrawer = (kind: SpriteKind, ctx: Ctx, x: number, y: number, angle: number, s: number, phase: number) => boolean;
 let spriteDrawer: SpriteDrawer | null = null;
 export function setSpriteDrawer(d: SpriteDrawer | null): void {
@@ -383,6 +384,936 @@ export function drawBeetle(ctx: Ctx, x: number, y: number, angle: number, s: num
   circle(ctx, 24.7, -3.2, 1); ctx.fill();
   circle(ctx, 24.7, 3.2, 1); ctx.fill();
   ctx.restore();
+}
+
+/**
+ * Скарабей (вид сверху, смотрит вдоль +x): чёрный, с бронзовым отливом, надкрылья в продольных
+ * бороздках, широкая переднеспинка, голова-грабли с зубцами спереди. Векторный путь — пока не
+ * загрузился лист спрайтов.
+ */
+export function drawScarab(ctx: Ctx, x: number, y: number, angle: number, s: number, legPhase: number): void {
+  if (spriteDrawer && spriteDrawer('scarab', ctx, x, y, angle, s * SPRITE_PER_VECTOR, legPhase)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  legs6(ctx, legPhase, [9, 0, -8], 11, 19, 2.6);
+  outline(ctx, 2.6);
+  ell(ctx, -8, 0, 16, 14);
+  fs(ctx, '#2c2c34');
+  ctx.strokeStyle = 'rgba(150,140,110,0.35)';
+  ctx.lineWidth = 1;
+  for (const dy of [-9, -4.5, 4.5, 9]) {
+    ctx.beginPath(); ctx.moveTo(4, dy * 0.9); ctx.lineTo(-20, dy * 0.75); ctx.stroke();
+  }
+  ctx.strokeStyle = '#111116';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-23, 0); ctx.stroke();
+  outline(ctx, 2.6);
+  ell(ctx, 10, 0, 8, 13);
+  fs(ctx, '#24242c');
+  ctx.beginPath();
+  ctx.moveTo(15, -9);
+  ctx.arc(16, 0, 9, -Math.PI / 2, Math.PI / 2);
+  ctx.closePath();
+  outline(ctx, 2.4);
+  fs(ctx, '#1c1c22');
+  ctx.fillStyle = OUT;
+  for (let i = 0; i < 6; i++) {
+    const a = -Math.PI / 2 + ((i + 0.5) / 6) * Math.PI;
+    const tx = 16 + Math.cos(a) * 9;
+    const ty = Math.sin(a) * 9;
+    ctx.beginPath();
+    ctx.moveTo(tx - Math.sin(a) * 1.6, ty + Math.cos(a) * 1.6);
+    ctx.lineTo(tx + Math.cos(a) * 3, ty + Math.sin(a) * 3);
+    ctx.lineTo(tx + Math.sin(a) * 1.6, ty - Math.cos(a) * 1.6);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(200,180,120,0.35)';
+  ell(ctx, -9, -7, 8, 2.6, 0.12); ctx.fill();
+  ell(ctx, 9, -6, 3.5, 2, 0); ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Скорпион (вид сверху, смотрит вдоль +x): янтарный, клешни впереди, хвост назад с жалом,
+ * загнутым вперёд. Векторный путь — пока не загрузился лист спрайтов.
+ */
+export function drawScorpion(ctx: Ctx, x: number, y: number, angle: number, s: number, legPhase: number): void {
+  if (spriteDrawer && spriteDrawer('scorpion', ctx, x, y, angle, s * SPRITE_PER_VECTOR, legPhase)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  legs6(ctx, legPhase, [9, 3, -3], 10, 20, 2.2);
+  outline(ctx, 2.4);
+  for (const [tx, r] of [[-17, 3.2], [-22, 3.5], [-27, 3.8], [-31, 4.1]] as const) {
+    circle(ctx, tx, 0, r);
+    fs(ctx, '#a0601f');
+  }
+  circle(ctx, -27, 0, 4.6);
+  fs(ctx, '#7a3e12');
+  ctx.fillStyle = '#2a160a';
+  ctx.beginPath(); ctx.moveTo(-24, -1.6); ctx.lineTo(-17, 0); ctx.lineTo(-24, 1.6); ctx.closePath(); ctx.fill();
+  for (const side of [-1, 1]) {
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(13, 4 * side); ctx.lineTo(20, 12 * side); ctx.lineTo(25, 13 * side); ctx.stroke();
+    ctx.strokeStyle = '#b8702a';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    outline(ctx, 2);
+    ell(ctx, 29, 13 * side, 5.5, 3.6, 0.1 * side);
+    fs(ctx, '#b8702a');
+  }
+  outline(ctx, 2.6);
+  ell(ctx, -4, 0, 12, 9);
+  fs(ctx, '#b8702a');
+  ell(ctx, 10, 0, 7, 8);
+  fs(ctx, '#a0601f');
+  ctx.fillStyle = 'rgba(255,230,170,0.45)';
+  ell(ctx, -5, -4, 6, 2.2); ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Ледяной клоп (вид сверху, смотрит вдоль +x): синий щитник в инее. Векторный путь — пока не
+ * загрузился лист спрайтов.
+ */
+export function drawIceBug(ctx: Ctx, x: number, y: number, angle: number, s: number, legPhase: number): void {
+  if (spriteDrawer && spriteDrawer('iceBug', ctx, x, y, angle, s * SPRITE_PER_VECTOR, legPhase)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  legs6(ctx, legPhase, [8, 1, -6], 9, 18, 2.4);
+  outline(ctx, 2.6);
+  ctx.beginPath();
+  ctx.moveTo(14, -7); ctx.lineTo(9, -15); ctx.quadraticCurveTo(-10, -15, -19, 0); ctx.quadraticCurveTo(-10, 15, 9, 15); ctx.lineTo(14, 7);
+  ctx.closePath();
+  fs(ctx, '#3a7ec2');
+  ctx.beginPath(); ctx.moveTo(8, -6); ctx.lineTo(-9, 0); ctx.lineTo(8, 6); ctx.closePath();
+  fs(ctx, '#8fd0f2');
+  ell(ctx, 17, 0, 4.5, 5);
+  fs(ctx, '#2c5e98');
+  ctx.restore();
+}
+
+/**
+ * Морозная аура ледяного клопа: синее пунктирное кольцо радиуса r с лёгкой заливкой и снежинками,
+ * плывущими по кругу, — показывает, какие башни мёрзнут. На почти белой земле Снегов кольцо синее,
+ * а не белое.
+ */
+export function drawFrostAura(ctx: Ctx, x: number, y: number, r: number, time: number): void {
+  const a0 = ctx.globalAlpha;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.86);
+  const g = ctx.createRadialGradient(0, 0, r * 0.35, 0, 0, r);
+  g.addColorStop(0, 'rgba(90,160,235,0)');
+  g.addColorStop(1, 'rgba(90,160,235,0.16)');
+  ctx.fillStyle = g;
+  circle(ctx, 0, 0, r);
+  ctx.fill();
+  ctx.globalAlpha = a0 * (0.55 + 0.2 * Math.sin(time * 2));
+  ctx.strokeStyle = '#3f86d8';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([9, 7]);
+  ctx.lineDashOffset = -time * 10;
+  circle(ctx, 0, 0, r);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = a0 * 0.8;
+  ctx.strokeStyle = '#eaf6ff';
+  ctx.lineWidth = 1.2;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 5; i++) {
+    const a = time * 0.35 + (i / 5) * TAU + Math.sin(i * 3.1) * 0.25;
+    const fx = Math.cos(a) * r * (0.9 + 0.05 * Math.sin(i * 1.7));
+    const fy = Math.sin(a) * r * (0.9 + 0.05 * Math.sin(i * 1.7));
+    for (let k = 0; k < 3; k++) {
+      const b = (k / 3) * Math.PI + i;
+      ctx.beginPath();
+      ctx.moveTo(fx - Math.cos(b) * 4, fy - Math.sin(b) * 4);
+      ctx.lineTo(fx + Math.cos(b) * 4, fy + Math.sin(b) * 4);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.globalAlpha = a0;
+}
+
+/** Иней на башне под морозной аурой: синеватый отсвет у подножия и снежинка над башней. */
+export function drawChillMark(ctx: Ctx, x: number, y: number, time: number): void {
+  const pulse = 0.5 + 0.5 * Math.sin(time * 4);
+  ctx.save();
+  ctx.fillStyle = `rgba(110,180,245,${(0.2 + 0.1 * pulse).toFixed(2)})`;
+  ell(ctx, x, y + 14, 46, 17);
+  ctx.fill();
+  const sx = x + 30;
+  const sy = y - 62 + Math.sin(time * 2) * 2;
+  ctx.fillStyle = 'rgba(30,60,110,0.85)';
+  circle(ctx, sx, sy, 11);
+  ctx.fill();
+  ctx.strokeStyle = '#3f86d8';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.strokeStyle = '#eaf6ff';
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round';
+  for (let k = 0; k < 3; k++) {
+    const b = (k / 3) * Math.PI + Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(sx - Math.cos(b) * 7, sy - Math.sin(b) * 7);
+    ctx.lineTo(sx + Math.cos(b) * 7, sy + Math.sin(b) * 7);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * Ледяная улитка (вид сверху, смотрит вдоль +x): сиреневая нога, бирюзовая ледяная раковина
+ * со спиралью, глаза на стебельках. Векторный путь — пока не загрузился лист спрайтов.
+ */
+export function drawIceSnail(ctx: Ctx, x: number, y: number, angle: number, s: number, phase: number): void {
+  if (spriteDrawer && spriteDrawer('iceSnail', ctx, x, y, angle, s * SPRITE_PER_VECTOR, phase)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s * (1 + 0.04 * Math.sin(phase)), s * (1 - 0.03 * Math.sin(phase)));
+  outline(ctx, 2.6);
+  ctx.beginPath();
+  ctx.moveTo(-28, 0);
+  ctx.quadraticCurveTo(-8, -10, 14, -8);
+  ctx.quadraticCurveTo(22, 0, 14, 8);
+  ctx.quadraticCurveTo(-8, 10, -28, 0);
+  ctx.closePath();
+  fs(ctx, '#9390c0');
+  for (let side = -1; side <= 1; side += 2) {
+    ctx.beginPath(); ctx.moveTo(16, side * 3); ctx.quadraticCurveTo(22, side * 6, 26, side * 9); ctx.stroke();
+    circle(ctx, 26, side * 9, 2.8);
+    fs(ctx, '#eaf7ff');
+  }
+  ell(ctx, -5, 0, 13.5, 12);
+  fs(ctx, '#7fd6e6');
+  ctx.strokeStyle = '#1f6f92';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for (let i = 0; i <= 40; i++) {
+    const a = 0.3 + (i / 40) * TAU * 2.2;
+    const r = 1 + (i / 40) * 10.5;
+    ctx.lineTo(-5 + Math.cos(a) * r, Math.sin(a) * r * 0.9);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function hash01(i: number): number {
+  const v = Math.sin(i * 127.1 + 311.7) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+/**
+ * Ледяная дорожка улитки поверх тропы: глянцевая голубая лента с бликами и редкими трещинками.
+ * pts — точки тропы, ice[i] — до какого времени мира скользок отрезок от точки i. Дорожка тает
+ * с хвоста: за последние секунды сужается на нет. Блики привязаны к номеру точки и не дрожат.
+ */
+export function drawIceTrail(ctx: Ctx, pts: ReadonlyArray<{ x: number; y: number }>, ice: ArrayLike<number>, now: number): void {
+  const n = pts.length;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  let i = 0;
+  while (i < n - 1) {
+    if (!(ice[i] > now)) { i++; continue; }
+    let j = i;
+    while (j < n - 1 && ice[j] > now) j++;
+    // Скользкие отрезки i..j-1, точки ленты i..j.
+    const m = j - i + 1;
+    const nx: number[] = [];
+    const ny: number[] = [];
+    const w: number[] = [];
+    for (let k = i; k <= j; k++) {
+      const p0 = pts[Math.max(0, k - 1)];
+      const p1 = pts[Math.min(n - 1, k + 1)];
+      const d = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
+      nx.push(-(p1.y - p0.y) / d);
+      ny.push((p1.x - p0.x) / d);
+      const melt = Math.min(1, (ice[Math.min(k, j - 1)] - now) / 2.5);
+      const cap = Math.min(1, (j - k + 0.5) / 2.5, (k - i + 0.5) / 2.5);
+      w.push(15 * melt * Math.sqrt(cap) * (1 + 0.1 * Math.sin(k * 0.9) + 0.06 * Math.sin(k * 0.37 + 2)));
+    }
+    const ribbon = (f: number): void => {
+      ctx.beginPath();
+      for (let k = 0; k < m; k++) ctx.lineTo(pts[i + k].x + nx[k] * w[k] * f, pts[i + k].y + ny[k] * w[k] * f);
+      for (let k = m - 1; k >= 0; k--) ctx.lineTo(pts[i + k].x - nx[k] * w[k] * f, pts[i + k].y - ny[k] * w[k] * f);
+      ctx.closePath();
+    };
+    ribbon(1);
+    ctx.fillStyle = 'rgba(170,220,248,0.92)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(58,128,200,0.85)';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ribbon(0.55);
+    ctx.fillStyle = 'rgba(236,249,255,0.6)';
+    ctx.fill();
+    for (let k = 1; k < m - 1; k++) {
+      if (w[k] < 7) continue;
+      const id = i + k;
+      const h = hash01(id);
+      const p = pts[id];
+      const tx = ny[k];
+      const ty = -nx[k];
+      if (h < 0.3) {
+        const off = (hash01(id + 71) * 2 - 1) * w[k] * 0.6;
+        const len = 3 + hash01(id + 13) * 6;
+        ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(p.x + nx[k] * off - tx * len, p.y + ny[k] * off - ty * len);
+        ctx.lineTo(p.x + nx[k] * off + tx * len, p.y + ny[k] * off + ty * len);
+        ctx.stroke();
+      } else if (h > 0.93) {
+        ctx.strokeStyle = 'rgba(58,128,200,0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(p.x + nx[k] * w[k] * 0.7, p.y + ny[k] * w[k] * 0.7);
+        ctx.lineTo(p.x + tx * 3, p.y + ty * 3);
+        ctx.lineTo(p.x - nx[k] * w[k] * 0.5 - tx * 2, p.y - ny[k] * w[k] * 0.5 - ty * 2);
+        ctx.stroke();
+      }
+    }
+    i = j;
+  }
+  ctx.restore();
+}
+
+/**
+ * Гусеница шелкопряда (вид сверху, смотрит вдоль +x): кремовое тело из пухлых валиков, бурая
+ * голова. Векторный путь — пока не загрузился лист спрайтов.
+ */
+export function drawSilkworm(ctx: Ctx, x: number, y: number, angle: number, s: number, phase: number): void {
+  if (spriteDrawer && spriteDrawer('silkworm', ctx, x, y, angle, s * SPRITE_PER_VECTOR, phase)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  const n = 9;
+  for (let i = n - 1; i >= 0; i--) {
+    const sq = Math.sin(phase + i * 0.75);
+    outline(ctx, 2.2);
+    ell(ctx, 15 - i * 4.4 + sq * 1.1, 0, 3.6, (i < 3 ? 7.4 : 6.6) - Math.max(0, i - 6) * 1.1);
+    fs(ctx, '#efe6c8');
+  }
+  outline(ctx, 2.2);
+  ell(ctx, 20.5 + Math.sin(phase - 0.75) * 1.1, 0, 3.8, 4.4);
+  fs(ctx, '#a8703a');
+  ctx.restore();
+}
+
+/**
+ * Бабочка шелкопряда (вид сверху, летит вдоль +x): кремовые крылья, толстое пушистое тело.
+ * Кадры листа — взмахи крыльев, поэтому фаза идёт от времени. Векторный путь — пока не загрузился лист.
+ */
+export function drawSilkMoth(ctx: Ctx, x: number, y: number, angle: number, s: number, time: number): void {
+  if (spriteDrawer && spriteDrawer('silkMoth', ctx, x, y, angle, s * SPRITE_PER_VECTOR, time * 22)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  const flap = 0.7 + 0.3 * Math.sin(time * 22);
+  outline(ctx, 2.2);
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(-3, 2 * side);
+    ctx.quadraticCurveTo(-8, 16 * side * flap, -15, 15 * side * flap);
+    ctx.quadraticCurveTo(-16, 5 * side, -9, 2 * side);
+    ctx.closePath();
+    fs(ctx, '#eadfbe');
+    ctx.beginPath();
+    ctx.moveTo(5, 2 * side);
+    ctx.quadraticCurveTo(12, 16 * side * flap, 6, 25 * side * flap);
+    ctx.quadraticCurveTo(-6, 22 * side * flap, -5, 2 * side);
+    ctx.closePath();
+    fs(ctx, '#f6efd8');
+  }
+  ell(ctx, -4, 0, 10, 4.2);
+  fs(ctx, '#efe6c8');
+  ell(ctx, 8, 0, 3.6, 3.4);
+  fs(ctx, '#d9c79a');
+  ctx.restore();
+}
+
+/**
+ * Кокон шелкопряда (вид сверху, лежит вдоль angle): желтоватый «арахис» из намотанной косой сеткой
+ * нити, вокруг рыхлая шёлковая вата. k — доля срока до вылупления (0..1): кокон дрожит всё сильнее,
+ * вдоль него растёт трещина, под конец из неё показывается крыло; time — для дрожи, grow —
+ * появление (0..1). Рисуется игрой, без листа.
+ */
+export function drawCocoon(ctx: Ctx, x: number, y: number, angle: number, s: number, k: number, time: number, grow = 1): void {
+  const RX = 14.5;
+  const RY = 9.6;
+  const shake = k * k;
+  const size = s * (0.4 + 0.6 * grow);
+  // Свет слева сверху экрана, пересчитанный в оси кокона.
+  const lx = -0.45 * Math.cos(angle) - 0.5 * Math.sin(angle);
+  const ly = 0.45 * Math.sin(angle) - 0.5 * Math.cos(angle);
+  // Очертание — «арахис»: две доли с лёгкой перетяжкой посередине.
+  const body = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(-RX, 0);
+    ctx.bezierCurveTo(-RX, -8, -9.5, -RY - 0.8, -5.5, -RY + 0.2);
+    ctx.quadraticCurveTo(0, -RY + 1.9, 5.5, -RY + 0.2);
+    ctx.bezierCurveTo(9.5, -RY - 0.8, RX, -8, RX, 0);
+    ctx.bezierCurveTo(RX, 8, 9.5, RY + 0.8, 5.5, RY - 0.2);
+    ctx.quadraticCurveTo(0, RY - 1.9, -5.5, RY - 0.2);
+    ctx.bezierCurveTo(-9.5, RY + 0.8, -RX, 8, -RX, 0);
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.translate(x + Math.sin(time * 31) * 1.2 * shake, y);
+  ctx.rotate(angle + Math.sin(time * 23) * 0.1 * shake);
+  ctx.scale(size, size);
+  ctx.lineCap = 'round';
+  // Шёлковая вата вокруг: подстилка на земле и петли рыхлой нити по краю.
+  ctx.fillStyle = 'rgba(255,250,232,0.3)';
+  ell(ctx, 0, 0, RX + 6.5, RY + 5.5);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,251,236,0.85)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 22; i++) {
+    const a0 = (i / 22) * TAU + hash01(i) * 0.2;
+    const a1 = a0 + 0.42 + hash01(i + 40) * 0.25;
+    const am = (a0 + a1) / 2;
+    const out = 4 + hash01(i + 80) * 3.5;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a0) * (RX - 1), Math.sin(a0) * (RY - 1));
+    ctx.quadraticCurveTo(Math.cos(am) * (RX + out * 1.6), Math.sin(am) * (RY + out * 1.6), Math.cos(a1) * (RX - 1), Math.sin(a1) * (RY - 1));
+    ctx.stroke();
+  }
+  outline(ctx, 2.2);
+  body();
+  const g = ctx.createRadialGradient(lx * RX * 0.7, ly * RY * 0.9, 1, 0, 0, RX * 1.1);
+  g.addColorStop(0, '#fffbe6');
+  g.addColorStop(0.5, '#f1dfa2');
+  g.addColorStop(1, '#a8873e');
+  fs(ctx, g);
+  // Намотка: нить лежит косой сеткой, витки в обе стороны.
+  ctx.save();
+  body();
+  ctx.clip();
+  ctx.lineWidth = 0.8;
+  for (let i = -8; i <= 8; i++) {
+    const bx = i * 3.4;
+    ctx.strokeStyle = 'rgba(138,104,40,0.38)';
+    ctx.beginPath();
+    ctx.moveTo(bx - 6, -RY - 1); ctx.lineTo(bx + 6, RY + 1);
+    ctx.moveTo(bx + 6, -RY - 1); ctx.lineTo(bx - 6, RY + 1);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.beginPath();
+    ctx.moveTo(bx - 5, -RY - 1); ctx.lineTo(bx + 7, RY + 1);
+    ctx.stroke();
+  }
+  // Тень перетяжки посередине.
+  ctx.fillStyle = 'rgba(120,90,36,0.16)';
+  ell(ctx, 0, 0, 2.6, RY);
+  ctx.fill();
+  ctx.restore();
+  // Блик со стороны света.
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ell(ctx, lx * RX * 0.75, ly * RY * 0.95, 4.2, 1.9, Math.atan2(ly, lx) + Math.PI / 2);
+  ctx.fill();
+  if (k > 0.3) {
+    // Трещина растёт вдоль кокона; под конец расходится, и из неё показывается крыло.
+    const x0 = -RX * 0.72;
+    const len = RX * 1.44 * ((k - 0.3) / 0.7);
+    const open = Math.max(0, (k - 0.7) / 0.3);
+    const steps = Math.max(2, Math.round(len / 3));
+    const edge = (i: number, dir: number): void => {
+      const u = i / steps;
+      ctx.lineTo(x0 + len * u, (i % 2 === 0 ? -1.3 : 1.3) + dir * Math.sin(u * Math.PI) * open * 3.2);
+    };
+    // Пока трещина не разошлась, это ломаная линия; потом — тёмная щель.
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#3a2812';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) edge(i, -1);
+    if (open > 0) {
+      for (let i = steps; i >= 0; i--) edge(i, 1);
+      ctx.closePath();
+      ctx.fillStyle = '#3a2812';
+      ctx.fill();
+    }
+    ctx.stroke();
+    if (open > 0) {
+      const wx = x0 + len * 0.55;
+      outline(ctx, 1.4);
+      ctx.beginPath();
+      ctx.moveTo(wx - 4, 0.5);
+      ctx.quadraticCurveTo(wx - 1, -3 - open * 6, wx + 4 + open * 2, -2 - open * 7);
+      ctx.quadraticCurveTo(wx + 5, -1, wx + 4, 0.5);
+      ctx.closePath();
+      fs(ctx, '#fbf5e0');
+    }
+  }
+  ctx.restore();
+}
+
+/**
+ * Клещ (вид сверху, смотрит вдоль +x): винное плоское тело, костяной щиток спереди, восемь
+ * коротких ног. fed (0..1) — насколько он напился: поверх тела растёт сизое блестящее брюшко,
+ * его игра рисует сама и на спрайте, и на векторном запасе.
+ */
+export function drawTick(ctx: Ctx, x: number, y: number, angle: number, s: number, legPhase: number, fed = 0): void {
+  const k = s * (1 + 0.08 * fed);
+  if (!(spriteDrawer && spriteDrawer('tick', ctx, x, y, angle, k * SPRITE_PER_VECTOR, legPhase))) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.scale(k, k);
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        const sw = Math.sin(legPhase + (i % 2 === 0 ? 0 : Math.PI) + (side > 0 ? Math.PI : 0)) * 2;
+        ctx.beginPath();
+        ctx.moveTo(6 - i * 3.6, 5 * side);
+        ctx.lineTo(10 - i * 5.6 + sw, 14 * side);
+        ctx.stroke();
+      }
+    }
+    outline(ctx, 2.4);
+    ell(ctx, -3, 0, 12, 9.5);
+    fs(ctx, '#6c2238');
+    ell(ctx, 5.5, 0, 5.5, 6);
+    fs(ctx, '#dcc79c');
+    ctx.restore();
+  }
+  if (fed <= 0.02) return;
+  // Брюшко в единицах спрайта: спереди упирается в щиток, сзади и в стороны растёт.
+  const U = k * SPRITE_PER_VECTOR * 0.39;
+  const rx = (14.5 + 11 * fed) * U;
+  const ry = (19 + 5 * fed) * U;
+  const cx = (-21.5 - 11 * fed) * U;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.86);
+  // Лист знает восемь направлений: брюшко поворачиваем так же, иначе оно съедет со спрайта.
+  ctx.rotate(Math.round(angle / (Math.PI / 4)) * (Math.PI / 4));
+  ctx.globalAlpha *= Math.min(1, fed * 4);
+  outline(ctx, 2);
+  ell(ctx, cx, 0, rx, ry);
+  // Сизое, как у настоящего напившегося клеща: красное рядом с рыжими солдатами читалось бы их брюшком.
+  const g = ctx.createRadialGradient(cx + rx * 0.25, 0, rx * 0.1, cx, 0, Math.max(rx, ry) * 1.05);
+  g.addColorStop(0, '#dde3ee');
+  g.addColorStop(0.5, '#a2adc4');
+  g.addColorStop(1, '#505876');
+  fs(ctx, g);
+  // Спереди, у щитка, брюшко просвечивает выпитой кровью.
+  ctx.save();
+  ell(ctx, cx, 0, rx, ry);
+  ctx.clip();
+  const blush = ctx.createRadialGradient(cx + rx, 0, 0, cx + rx, 0, rx * 1.1);
+  blush.addColorStop(0, 'rgba(206,56,74,0.75)');
+  blush.addColorStop(1, 'rgba(206,56,74,0)');
+  ctx.fillStyle = blush;
+  ctx.fillRect(cx - rx, -ry, rx * 2, ry * 2);
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(40,46,72,0.55)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = -4; i <= 4; i++) {
+    const a = Math.PI + i * 0.27;
+    ctx.moveTo(cx + Math.cos(a) * rx, Math.sin(a) * ry);
+    ctx.lineTo(cx + Math.cos(a) * rx * 0.68, Math.sin(a) * ry * 0.68);
+  }
+  // Пара продольных борозд, как на голодном теле: брюшко — боб, а не шар.
+  for (const side of [-1, 1]) {
+    ctx.moveTo(cx + rx * 0.55, ry * 0.3 * side);
+    ctx.quadraticCurveTo(cx, ry * 0.55 * side, cx - rx * 0.5, ry * 0.36 * side);
+  }
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ell(ctx, cx + rx * 0.1, 0, rx * 0.3, ry * 0.14);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Богомол (вид сверху, смотрит вдоль +x): нефритовый, узкий, с двумя серпами перед головой.
+ * Векторный путь — пока не загрузился лист спрайтов.
+ */
+export function drawMantis(ctx: Ctx, x: number, y: number, angle: number, s: number, legPhase: number): void {
+  if (spriteDrawer && spriteDrawer('mantis', ctx, x, y, angle, s * SPRITE_PER_VECTOR, legPhase)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round';
+  for (const side of [-1, 1]) {
+    const sw = Math.sin(legPhase + (side > 0 ? Math.PI : 0)) * 2;
+    ctx.beginPath(); ctx.moveTo(1, 3 * side); ctx.lineTo(5 + sw, 12 * side); ctx.lineTo(2 + sw, 19 * side); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-3, 3 * side); ctx.lineTo(-9 - sw, 12 * side); ctx.lineTo(-16 - sw, 18 * side); ctx.stroke();
+  }
+  outline(ctx, 2.2);
+  ctx.beginPath();
+  ctx.moveTo(3, -4.5); ctx.quadraticCurveTo(-12, -6.5, -25, 0); ctx.quadraticCurveTo(-12, 6.5, 3, 4.5); ctx.closePath();
+  fs(ctx, '#5cc88e');
+  ell(ctx, 8, 0, 7, 3);
+  fs(ctx, '#2fa46c');
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(10, 3 * side); ctx.lineTo(21, 10 * side); ctx.quadraticCurveTo(29, 10 * side, 30, 3 * side);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.moveTo(13, -4.5); ctx.lineTo(20, 0); ctx.lineTo(13, 4.5); ctx.closePath();
+  fs(ctx, '#2fa46c');
+  ctx.restore();
+}
+
+/**
+ * След взмаха богомола: светлый серп перед ним, k — 0..1 от удара до исчезновения. Серп уходит
+ * вперёд и тает; radius — радиус удара, чтобы было видно, кого он достал.
+ */
+export function drawSlash(ctx: Ctx, x: number, y: number, angle: number, radius: number, k: number): void {
+  const R = radius * (0.66 + 0.34 * k);
+  const span = 1.25;
+  // Внутренняя дуга — окружность с центром позади, через концы внешней: серп с острыми рогами.
+  const Ri = 2 * R * Math.cos(span / 2);
+  const phi = Math.atan2(R * Math.sin(span), R * Math.cos(span) + R);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.globalAlpha *= 1 - k * k;
+  ctx.beginPath();
+  ctx.arc(0, 0, R, -span, span);
+  ctx.arc(-R, 0, Ri, phi, -phi, true);
+  ctx.closePath();
+  ctx.fillStyle = '#f6fff2';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(40,140,90,0.85)';
+  ctx.lineWidth = 1.4;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Светлячок (вид сверху, летит вдоль +x): тёмные надкрылья врозь, рыжий щиток, светящийся кончик
+ * брюшка. Вокруг него мерцает свет — его рисует игра и под спрайтом, и под векторным запасом.
+ * Кадры листа — взмахи крыльев, поэтому фаза идёт от времени.
+ */
+export function drawFirefly(ctx: Ctx, x: number, y: number, angle: number, s: number, time: number): void {
+  const pulse = 0.6 + 0.4 * Math.sin(time * 5);
+  const gl = ctx.createRadialGradient(x, y, 2, x, y, 30 * s);
+  gl.addColorStop(0, `rgba(246,255,160,${(0.8 * pulse).toFixed(3)})`);
+  gl.addColorStop(0.5, `rgba(240,255,150,${(0.35 * pulse).toFixed(3)})`);
+  gl.addColorStop(1, 'rgba(240,255,150,0)');
+  ctx.fillStyle = gl;
+  circle(ctx, x, y, 30 * s);
+  ctx.fill();
+  if (spriteDrawer && spriteDrawer('firefly', ctx, x, y, angle, s * SPRITE_PER_VECTOR, time * 16)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  const flap = Math.abs(Math.sin(time * 38));
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(2, side * 3);
+    ctx.rotate(-side * (0.7 + flap * 0.5));
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ell(ctx, -10, 0, 12, 3.5);
+    ctx.fill();
+    ctx.restore();
+  }
+  outline(ctx, 2.2);
+  ell(ctx, -6, 0, 10, 4.6);
+  fs(ctx, '#3a2a22');
+  ell(ctx, -13, 0, 4, 3.6);
+  fs(ctx, '#eaff6a');
+  ell(ctx, 6, 0, 5, 5.4);
+  fs(ctx, '#e8703a');
+  ctx.restore();
+}
+
+/**
+ * Целебный свет светлячка на земле: тёплое пятно радиуса r, по краю бегут золотые точки, внутри
+ * всплывают искры — показывает, кого из врагов он лечит.
+ */
+export function drawFireflyLight(ctx: Ctx, x: number, y: number, r: number, time: number): void {
+  const a0 = ctx.globalAlpha;
+  const pulse = 0.75 + 0.25 * Math.sin(time * 3);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.86);
+  const g = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+  g.addColorStop(0, `rgba(250,255,170,${(0.42 * pulse).toFixed(3)})`);
+  g.addColorStop(0.7, `rgba(246,250,140,${(0.24 * pulse).toFixed(3)})`);
+  g.addColorStop(1, 'rgba(246,250,140,0.06)');
+  ctx.fillStyle = g;
+  circle(ctx, 0, 0, r);
+  ctx.fill();
+  // Кромка света: бегущие светлые точки с янтарной обводкой, чтобы читались и на траве, и на гравии.
+  ctx.lineCap = 'round';
+  ctx.setLineDash([1, 10]);
+  ctx.lineDashOffset = -time * 14;
+  ctx.globalAlpha = a0 * 0.55;
+  ctx.strokeStyle = '#a8760c';
+  ctx.lineWidth = 5.4;
+  circle(ctx, 0, 0, r * 0.97);
+  ctx.stroke();
+  ctx.globalAlpha = a0 * (0.8 + 0.2 * Math.sin(time * 2));
+  ctx.strokeStyle = '#fff6a8';
+  ctx.lineWidth = 3.4;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Искры: всплывают и гаснут, каждая по своему кругу.
+  for (let i = 0; i < 7; i++) {
+    const t = (time * 0.45 + hash01(i + 300)) % 1;
+    const a = hash01(i + 320) * TAU + time * 0.2;
+    const rr = r * (0.25 + 0.6 * hash01(i + 340));
+    ctx.globalAlpha = a0 * Math.sin(t * Math.PI) * 0.9;
+    ctx.fillStyle = '#fdffc4';
+    circle(ctx, Math.cos(a) * rr, Math.sin(a) * rr - t * 16, 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.globalAlpha = a0;
+}
+
+/** Значок «лечится» у врага в свете светлячка: зелёный плюс, покачивается. */
+export function drawMendMark(ctx: Ctx, x: number, y: number, time: number): void {
+  const cy = y + Math.sin(time * 6) * 1.5;
+  ctx.fillStyle = OUT;
+  ctx.fillRect(x - 5, cy - 2.3, 10, 4.6);
+  ctx.fillRect(x - 2.3, cy - 5, 4.6, 10);
+  ctx.fillStyle = '#8ef07a';
+  ctx.fillRect(x - 3.8, cy - 1.2, 7.6, 2.4);
+  ctx.fillRect(x - 1.2, cy - 3.8, 2.4, 7.6);
+}
+
+/** Армейский муравей джунглей: тёмное тело, светлая голова. */
+export const ANT_ARMY: AntColors = { body: '#8a4a1e', light: '#e6cf96', dark: '#3e1c08' };
+
+/** Армейский муравей (вид сверху): спрайт со светлой головой и жвалами-серпами, векторный запас — обычный муравей в его цветах. */
+export function drawArmyAnt(ctx: Ctx, x: number, y: number, angle: number, s: number, legPhase: number): void {
+  if (spriteDrawer && spriteDrawer('antArmy', ctx, x, y, angle, s * SPRITE_PER_VECTOR, legPhase)) return;
+  drawAnt(ctx, x, y, angle, s, ANT_ARMY, legPhase, true);
+}
+
+/**
+ * Сколопендра (вид сверху, смотрит вдоль +x): бордовые сегменты, красная голова, жёлтые ноги;
+ * half — половинка из пяти сегментов. Векторный путь — пока не загрузился лист спрайтов.
+ */
+export function drawCentipede(ctx: Ctx, x: number, y: number, angle: number, s: number, legPhase: number, half: boolean): void {
+  if (spriteDrawer && spriteDrawer(half ? 'centipedeHalf' : 'centipede', ctx, x, y, angle, s * SPRITE_PER_VECTOR, legPhase)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  const n = half ? 5 : 11;
+  const front = (n - 1) * 2.4;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const sx = front - i * 4.8;
+    const sw = Math.sin(legPhase - i * 0.8) * 1.6;
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(sx + sw, -10); ctx.lineTo(sx, 0); ctx.lineTo(sx - sw, 10); ctx.stroke();
+    ctx.strokeStyle = '#f0b030';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    outline(ctx, 2);
+    ell(ctx, front - i * 4.8, Math.sin(legPhase - i * 0.8) * 1.4, 3.6, 4.2);
+    fs(ctx, '#7e2c20');
+  }
+  outline(ctx, 2);
+  ell(ctx, front + 5, 0, 4, 4.2);
+  fs(ctx, '#d0442c');
+  ctx.restore();
+}
+
+/**
+ * Горный кузнечик (вид сверху, смотрит вдоль +x): зелёный, охристые надкрылья, задние ноги
+ * «домиком». Векторный путь — пока не загрузился лист спрайтов.
+ */
+export function drawGrasshopper(ctx: Ctx, x: number, y: number, angle: number, s: number, legPhase: number): void {
+  if (spriteDrawer && spriteDrawer('grasshopper', ctx, x, y, angle, s * SPRITE_PER_VECTOR, legPhase)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2.6;
+  ctx.lineCap = 'round';
+  for (const side of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(0, 4 * side); ctx.lineTo(-15, 11 * side); ctx.lineTo(-6, 17 * side); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(10, 4 * side); ctx.lineTo(16, 11 * side); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(18, 2 * side); ctx.lineTo(31, 9 * side); ctx.stroke();
+  }
+  outline(ctx, 2.4);
+  ctx.beginPath();
+  ctx.moveTo(9, -5); ctx.quadraticCurveTo(-8, -6, -25, 0); ctx.quadraticCurveTo(-8, 6, 9, 5); ctx.closePath();
+  fs(ctx, '#b89a56');
+  ell(ctx, 10, 0, 5, 5.5);
+  fs(ctx, '#6fa63a');
+  ell(ctx, 17, 0, 4.2, 4.6);
+  fs(ctx, '#6fa63a');
+  ctx.restore();
+}
+
+/**
+ * Мокрица (вид сверху, смотрит вдоль +x): сизый овал из поперечных пластин, усы вперёд.
+ * Векторный путь — пока не загрузился лист спрайтов.
+ */
+export function drawWoodlouse(ctx: Ctx, x: number, y: number, angle: number, s: number, legPhase: number): void {
+  if (spriteDrawer && spriteDrawer('woodlouse', ctx, x, y, angle, s * SPRITE_PER_VECTOR, legPhase)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(s, s);
+  legs6(ctx, legPhase, [9, 0, -9], 4, 15, 2);
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2;
+  for (const side of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(18, 3 * side); ctx.lineTo(25, 8 * side); ctx.lineTo(31, 9 * side); ctx.stroke();
+  }
+  outline(ctx, 2.6);
+  ell(ctx, -1, 0, 20, 12.5);
+  fs(ctx, '#7d8790');
+  ctx.strokeStyle = 'rgba(30,36,44,0.6)';
+  ctx.lineWidth = 1.2;
+  for (const bx of [12, 7, 2, -3, -8, -13]) {
+    ctx.beginPath(); ctx.moveTo(bx - 1, -12); ctx.quadraticCurveTo(bx + 1.5, 0, bx - 1, 12); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(220,226,232,0.4)';
+  ell(ctx, 2, -6, 9, 2.4); ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Мокрица, свёрнутая в шар (вид сверху): сизая сфера, пластины лежат меридианами поперёк хода
+ * и катятся (roll — угол качения); светлая кромка пластин, блик слева сверху.
+ */
+export function drawLouseBall(ctx: Ctx, x: number, y: number, r: number, angle: number, roll: number): void {
+  drawShadow(ctx, x + 1, y + r * 0.7, r * 0.95, r * 0.4, 0.22);
+  outline(ctx, 2);
+  circle(ctx, x, y, r);
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r * 1.05);
+  g.addColorStop(0, '#d2d9de');
+  g.addColorStop(0.45, '#7d8790');
+  g.addColorStop(1, '#343b44');
+  fs(ctx, g);
+  ctx.save();
+  circle(ctx, x, y, r);
+  ctx.clip();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  // Пластины — большие круги через ось y: сверху это полуэллипсы с полуосью r·|sin a| вдоль хода.
+  const n = 9;
+  for (let i = 0; i < n; i++) {
+    const a = roll + (i / n) * Math.PI;
+    const sa = Math.sin(a);
+    const ca = Math.cos(a);
+    // Видна верхняя половина (z = r·cos a·cos φ > 0): по ходу, если sin a и cos a одного знака.
+    const rx = Math.max(0.01, Math.abs(r * sa));
+    const back = sa * ca < 0;
+    ctx.strokeStyle = 'rgba(28,34,42,0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, r, 0, -Math.PI / 2, Math.PI / 2, back);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(232,238,244,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(back ? 1.2 : -1.2, 0, rx, r, 0, -Math.PI / 2, Math.PI / 2, back);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ell(ctx, x - r * 0.38, y - r * 0.42, r * 0.32, r * 0.17, -0.6);
+  ctx.fill();
+}
+
+/**
+ * Навозный шар скарабея (вид сверху): комковатый бурый шар с соломинками; комья катятся вдоль
+ * хода (roll — угол качения), трещины растут, когда прочность frac падает; flash — вспышка удара.
+ */
+export function drawDungBall(ctx: Ctx, x: number, y: number, r: number, angle: number, roll: number, frac: number, flash: boolean): void {
+  outline(ctx, 1.8);
+  circle(ctx, x, y, r);
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r * 1.05);
+  g.addColorStop(0, '#c49a62');
+  g.addColorStop(0.5, '#8a6034');
+  g.addColorStop(1, '#43290f');
+  fs(ctx, g);
+  ctx.save();
+  circle(ctx, x, y, r);
+  ctx.clip();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  // Комья и соломинки на сфере: точка на меридиане по ходу движения, видна, пока она сверху.
+  const LUMPS: ReadonlyArray<readonly [number, number, number, number]> = [
+    [0, -0.35, 0.26, 0], [0.5, 0.62, 0.16, 2], [0.9, 0.4, 0.22, 1], [1.3, -0.65, 0.15, 2], [1.7, -0.1, 0.3, 0],
+    [2.2, 0.2, 0.14, 2], [2.6, 0.55, 0.2, 1], [3.3, -0.55, 0.24, 0], [3.7, 0.05, 0.16, 2], [4.1, 0.15, 0.28, 1],
+    [4.5, -0.7, 0.14, 2], [4.9, -0.3, 0.2, 0], [5.3, 0.7, 0.15, 2], [5.6, 0.45, 0.25, 1], [6.0, -0.15, 0.13, 2],
+  ];
+  const TONES = ['rgba(52,30,10,0.85)', 'rgba(214,178,118,0.85)', 'rgba(28,16,4,0.7)'];
+  for (const [p0, v, size, tone] of LUMPS) {
+    const a = roll + p0;
+    const up = Math.cos(a);
+    if (up <= 0.05) continue;
+    const u = Math.sin(a) * r * Math.sqrt(1 - v * v);
+    const fade = Math.min(1, up * 2);
+    ctx.globalAlpha *= fade;
+    ctx.fillStyle = TONES[tone];
+    ell(ctx, u, v * r, size * r * (0.3 + 0.7 * up), size * r * 0.85);
+    ctx.fill();
+    ctx.globalAlpha /= fade;
+  }
+  for (const [p0, v, len] of [[0.5, 0.1, 0.5], [2.2, -0.42, 0.42], [3.9, 0.48, 0.46]] as const) {
+    const a = roll + p0;
+    const up = Math.cos(a);
+    if (up <= 0.1) continue;
+    const u = Math.sin(a) * r * Math.sqrt(1 - v * v);
+    ctx.strokeStyle = 'rgba(240,215,140,0.85)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(u - len * r * 0.5 * up, v * r - len * r * 0.3); ctx.lineTo(u + len * r * 0.5 * up, v * r + len * r * 0.3); ctx.stroke();
+  }
+  // Трещины по мере износа.
+  ctx.strokeStyle = 'rgba(30,16,4,0.85)';
+  ctx.lineWidth = 1.3;
+  ctx.lineJoin = 'round';
+  if (frac < 0.67) {
+    ctx.beginPath(); ctx.moveTo(r * 0.9, -r * 0.2); ctx.lineTo(r * 0.35, -r * 0.05); ctx.lineTo(r * 0.1, -r * 0.4); ctx.lineTo(-r * 0.3, -r * 0.3); ctx.stroke();
+  }
+  if (frac < 0.34) {
+    ctx.beginPath(); ctx.moveTo(-r * 0.9, r * 0.35); ctx.lineTo(-r * 0.3, r * 0.15); ctx.lineTo(0, r * 0.5); ctx.lineTo(r * 0.45, r * 0.35); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(r * 0.1, -r * 0.4); ctx.lineTo(0, r * 0.05); ctx.stroke();
+  }
+  ctx.restore();
+  ctx.fillStyle = 'rgba(255,240,210,0.28)';
+  ell(ctx, x - r * 0.38, y - r * 0.42, r * 0.32, r * 0.17, -0.6);
+  ctx.fill();
+  if (flash) {
+    ctx.save();
+    ctx.globalAlpha *= 0.45;
+    ctx.fillStyle = '#fff';
+    circle(ctx, x, y, r);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 export function drawWasp(ctx: Ctx, x: number, y: number, angle: number, s: number, time: number, hornet = false): void {
@@ -648,6 +1579,39 @@ export function setTowerStyle(style: Biome | null): void {
   towerStyle = style;
 }
 
+/**
+ * Снаряжение солдата казармы поверх спрайта, по стилю акта: головной убор как у стрелков акта,
+ * у броненосцев доспех на спине, у жнецов оружие в жвалах. Без стиля (акты 1–2, плац, осада) —
+ * снаряжение родного луга.
+ */
+export function drawSoldierGear(ctx: Ctx, x: number, y: number, angle: number, s: number, variant: number, armored: boolean): void {
+  if (towerStyle === 'desert') {
+    drawSoldierGearDesert(ctx, x, y, angle, s, variant, armored);
+    return;
+  }
+  if (towerStyle === 'mountains') {
+    drawSoldierGearMountains(ctx, x, y, angle, s, variant, armored);
+    return;
+  }
+  if (towerStyle === 'jungle') {
+    drawSoldierGearJungle(ctx, x, y, angle, s, variant, armored);
+    return;
+  }
+  if (towerStyle === 'snow') {
+    drawSoldierGearSnow(ctx, x, y, angle, s, variant, armored);
+    return;
+  }
+  if (towerStyle === 'forest') {
+    drawSoldierGearForest(ctx, x, y, angle, s, variant, armored);
+    return;
+  }
+  if (towerStyle === 'asia') {
+    drawSoldierGearAsia(ctx, x, y, angle, s, variant, armored);
+    return;
+  }
+  drawSoldierGearMeadow(ctx, x, y, angle, s, variant, armored);
+}
+
 /** Соломенная шляпа-каса (вид сверху): конус с бликом слева сверху, кольца и лучи плетения. */
 function kasa(ctx: Ctx, x: number, y: number, r: number): void {
   drawShadow(ctx, x + 2, y + 2.5, r, r * 0.8, 0.25);
@@ -674,6 +1638,199 @@ function kasa(ctx: Ctx, x: number, y: number, r: number): void {
   ctx.fillStyle = '#9a6a2c';
   circle(ctx, x, y, r * 0.16);
   ctx.fill();
+}
+
+/** Смешать два цвета #rrggbb: t = 0 — первый, 1 — второй. */
+function mixHex(a: string, b: string, t: number): string {
+  const ca = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+  const cb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
+  return `rgb(${ca.map((v, i) => Math.round(v + (cb[i] - v) * t)).join(',')})`;
+}
+
+/**
+ * Каса солдата (вид сверху, оси: x — вперёд): соломенный конус, надвинутый на лоб — вершина
+ * сдвинута вперёд, каждая грань освещена по-своему (свет слева сверху), тень на тело. Без колец
+ * и точки в центре: круглая каса стрелков с кольцами и лучами на голове солдата была бы мишенью.
+ */
+function soldierKasa(ctx: Ctx, x: number, y: number, r: number, angle: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.9);
+  ctx.rotate(angle);
+  const [lx, ly] = lightDir(angle);
+  const rx = r * 1.05;
+  const ry = r * 0.98;
+  ctx.fillStyle = 'rgba(35,15,5,0.28)';
+  ell(ctx, -lx * r * 0.3, -ly * r * 0.3, rx, ry);
+  ctx.fill();
+  outline(ctx, 1.8);
+  ell(ctx, 0, 0, rx, ry);
+  ctx.fillStyle = '#c99a50';
+  ctx.fill();
+  const ax = r * 0.3;
+  const n = 14;
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * TAU;
+    const a1 = ((i + 1) / n) * TAU;
+    const x0 = Math.cos(a0) * rx;
+    const y0 = Math.sin(a0) * ry;
+    const x1 = Math.cos(a1) * rx;
+    const y1 = Math.sin(a1) * ry;
+    const mx = (x0 + x1) / 2 - ax;
+    const my = (y0 + y1) / 2;
+    const ml = Math.hypot(mx, my) || 1;
+    const lit = Math.max(0, Math.min(1, 0.5 + 0.6 * ((mx / ml) * lx + (my / ml) * ly)));
+    ctx.beginPath();
+    ctx.moveTo(ax, 0);
+    ctx.lineTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.closePath();
+    ctx.fillStyle = mixHex('#a2702e', '#fae6aa', lit);
+    ctx.fill();
+  }
+  // Плетение: тонкие лучи от вершины и пара коротких стежков поперёк на каждой грани.
+  ctx.strokeStyle = 'rgba(110,70,25,0.45)';
+  ctx.lineWidth = Math.max(0.5, r * 0.07);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU;
+    ctx.beginPath(); ctx.moveTo(ax, 0); ctx.lineTo(Math.cos(a) * rx * 0.97, Math.sin(a) * ry * 0.97); ctx.stroke();
+  }
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 1.6;
+  ell(ctx, 0, 0, rx, ry);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,240,200,0.55)';
+  ctx.lineWidth = r * 0.08;
+  ctx.beginPath(); ctx.ellipse(0, 0, rx * 0.93, ry * 0.93, 0, Math.atan2(ly, lx) - 0.8, Math.atan2(ly, lx) + 0.8); ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Лакированная пластинчатая броня на спине солдата Азии (оси: x — вперёд): три синие пластины
+ * поперёк тела, выгнутые дугой вперёд и сужающиеся назад, между ними красные просветы шнуровки,
+ * золотая кромка по переднему краю каждой. Не чёрно-жёлтая (иначе оса), без шва вдоль (иначе жук),
+ * без продольных шнуров — с ними пластины складывались в решётку и броня походила на ящик.
+ */
+function lacquerPlates(ctx: Ctx, x: number, y: number, r: number, angle: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.9);
+  ctx.rotate(angle);
+  const [lx, ly] = lightDir(angle);
+  const plates = 3;
+  const half = (t: number): number => r * (0.95 - 0.32 * t);
+  const step = r * 0.62;
+  const xf0 = r * 0.8;
+  const bow = r * 0.38;
+  const band = (xf: number, xb: number, hf: number, hb: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(xf - bow * 0.15, -hf);
+    ctx.quadraticCurveTo(xf + bow, 0, xf - bow * 0.15, hf);
+    ctx.lineTo(xb - bow * 0.15, hb);
+    ctx.quadraticCurveTo(xb + bow, 0, xb - bow * 0.15, -hb);
+    ctx.closePath();
+  };
+  ctx.lineJoin = 'round';
+  // Красная шнуровка под пластинами — видна в просветах.
+  band(xf0 + r * 0.04, xf0 - plates * step - r * 0.06, half(0) + r * 0.02, half(1) + r * 0.02);
+  outline(ctx, 1.5);
+  fs(ctx, '#c8352a');
+  ctx.save();
+  band(xf0 + r * 0.04, xf0 - plates * step - r * 0.06, half(0), half(1));
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(255,190,170,0.5)';
+  ctx.lineWidth = r * 0.05;
+  for (let yy = -r; yy <= r; yy += r * 0.2) {
+    ctx.beginPath(); ctx.moveTo(xf0 + r, yy); ctx.lineTo(xf0 - plates * step - r, yy); ctx.stroke();
+  }
+  ctx.restore();
+  for (let i = 0; i < plates; i++) {
+    const xf = xf0 - i * step;
+    const xb = xf - step + r * 0.14;
+    const hf = half(i / plates) - r * 0.06;
+    const hb = half((i + 1) / plates) - r * 0.08;
+    band(xf, xb, hf, hb);
+    outline(ctx, 1.2);
+    const g = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+    g.addColorStop(0, '#7a9ae0');
+    g.addColorStop(0.5, '#2f4a8a');
+    g.addColorStop(1, '#16244a');
+    fs(ctx, g);
+    // Золотая кромка по переднему краю и блик лака со стороны света.
+    ctx.strokeStyle = '#e0b13c';
+    ctx.lineWidth = r * 0.12;
+    ctx.beginPath(); ctx.moveTo(xf - bow * 0.15, -hf + r * 0.06); ctx.quadraticCurveTo(xf + bow * 0.92, 0, xf - bow * 0.15, hf - r * 0.06); ctx.stroke();
+    ctx.strokeStyle = 'rgba(225,238,255,0.55)';
+    ctx.lineWidth = r * 0.06;
+    const sd = ly > 0 ? 1 : -1;
+    ctx.beginPath(); ctx.moveTo(xf - r * 0.2, sd * hf * 0.62); ctx.quadraticCurveTo(xf - r * 0.1 + bow * 0.3, sd * hf * 0.2, xf - r * 0.12 + bow * 0.4, 0); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Нагината в жвалах солдата: бамбуковое древко поперёк, золотая муфта, светлый изогнутый клинок вперёд. */
+function soldierNaginata(ctx: Ctx, hx: number, hy: number, tx: number, ty: number): void {
+  const len = Math.hypot(tx - hx, ty - hy) || 1;
+  const ux = (tx - hx) / len;
+  const uy = (ty - hy) / len;
+  const nx = uy;
+  const ny = -ux;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 3.8;
+  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke();
+  ctx.strokeStyle = '#8cc043';
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  ctx.strokeStyle = '#3d621a';
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = 'butt';
+  for (const d of [0.3, 0.65]) {
+    const px = hx + (tx - hx) * d;
+    const py = hy + (ty - hy) * d;
+    ctx.beginPath(); ctx.moveTo(px - ux * 0.5, py - uy * 0.5); ctx.lineTo(px + ux * 0.5, py + uy * 0.5); ctx.stroke();
+  }
+  ctx.lineCap = 'round';
+  const at = (a: number, b: number): [number, number] => [tx + ux * a + nx * b, ty + uy * a + ny * b];
+  ctx.beginPath();
+  ctx.moveTo(...at(0, -1.5));
+  ctx.quadraticCurveTo(...at(7, -1.8), ...at(13, 3.8));
+  ctx.quadraticCurveTo(...at(6, 2.6), ...at(0, 1.5));
+  ctx.closePath();
+  const g = ctx.createLinearGradient(...at(5, -2), ...at(5, 3));
+  g.addColorStop(0, '#a4b2bc');
+  g.addColorStop(1, '#ffffff');
+  outline(ctx, 1.3);
+  fs(ctx, g);
+  ctx.strokeStyle = 'rgba(80,95,110,0.5)';
+  ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(...at(1, 0)); ctx.quadraticCurveTo(...at(7, 0.2), ...at(11.5, 3)); ctx.stroke();
+  outline(ctx, 1.2);
+  ctx.beginPath();
+  ctx.moveTo(...at(-2.2, -2)); ctx.lineTo(...at(0.4, -2)); ctx.lineTo(...at(0.4, 2)); ctx.lineTo(...at(-2.2, 2));
+  ctx.closePath();
+  fs(ctx, '#e0b13c');
+}
+
+/**
+ * Снаряжение солдата Азии поверх спрайта (по эталону Пустыни): соломенная каса, как у стрелков
+ * акта; у броненосцев на спине синяя лакированная пластинчатая броня с красными шнурами; у жнецов
+ * в жвалах нагината с бамбуковым древком.
+ */
+function drawSoldierGearAsia(ctx: Ctx, x: number, y: number, angle: number, s: number, variant: number, armored: boolean): void {
+  const k = s / 0.8;
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle) * 0.9;
+  if (armored) lacquerPlates(ctx, x - fx * 3 * k, y - fy * 3 * k, 8 * k, angle);
+  if (variant === 2) {
+    ctx.save();
+    ctx.translate(x + fx * 19 * k, y + fy * 19 * k);
+    ctx.rotate(angle);
+    ctx.scale(k, k);
+    soldierNaginata(ctx, -3, -8, 3, 9);
+    ctx.restore();
+  }
+  soldierKasa(ctx, x + fx * 11 * k, y + fy * 11 * k, 7.4 * k, angle);
 }
 
 /** Бумажный фонарь: рёбра, золотые крышки, кисточка снизу и тёплое свечение. */

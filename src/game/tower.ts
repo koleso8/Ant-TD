@@ -6,7 +6,7 @@ import type { Enemy } from './enemy';
 import { Soldier } from './soldier';
 import { AcidGlob, Seed } from './projectile';
 import { applyPerks, NO_PERKS, type Perks } from './perks';
-import { drawScaffold, drawTowerAcid, drawTowerBarracks, drawTowerCatapult, drawTowerSpore } from '../render/art';
+import { drawChillMark, drawScaffold, drawTowerAcid, drawTowerBarracks, drawTowerCatapult, drawTowerSpore } from '../render/art';
 import type { Construction } from './construction';
 
 /** Башни рисуются крупнее своих площадок: так читаются на телефоне. */
@@ -21,6 +21,8 @@ export class Tower {
   x: number;
   y: number;
   cooldown = 0.3;
+  /** Насколько башню сейчас морозит аура ледяного клопа: доля, на которую медленнее перезарядка. */
+  chill = 0;
   angle = -Math.PI / 2;
   fireTime = -10;
   spent: number;
@@ -56,7 +58,7 @@ export class Tower {
     return this.spec === null ? null : this.def.specs[this.spec];
   }
   get stats(): TowerLevel {
-    const key = `${this.level}/${this.spec ?? '-'}`;
+    const key = `${this.level}/${this.spec ?? '-'}/${this.perks.rev}`;
     if (this.statsCache && this.statsCache.key === key) return this.statsCache.value;
     const s = this.specDef;
     const base = s ? s.stats : this.def.levels[this.level - 1];
@@ -132,7 +134,13 @@ export class Tower {
         return;
       }
     }
-    this.cooldown -= dt;
+    // Морозная аура ледяных клопов: перезарядка идёт медленнее, пока клоп рядом.
+    this.chill = 0;
+    for (const e of g.enemies) {
+      const c = e.def.chill;
+      if (c && !e.dead && c.slow > this.chill && Math.hypot(e.x - this.x, e.y - this.y) <= c.radius) this.chill = c.slow;
+    }
+    this.cooldown -= dt * (1 - this.chill);
     const spec = this.specDef;
     switch (this.kind) {
       case 'acid': {
@@ -243,6 +251,7 @@ export class Tower {
       return;
     }
     this.drawScaled(ctx, time);
+    if (this.chill > 0 && this.kind !== 'barracks') drawChillMark(ctx, this.x, this.y, time);
   }
 
   private drawScaled(ctx: CanvasRenderingContext2D, time: number): void {

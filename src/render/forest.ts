@@ -735,6 +735,50 @@ function kiteShield(ctx: Ctx, x: number, y: number, w: number, h: number, tilt: 
   ctx.restore();
 }
 
+/**
+ * Снаряжение солдата Леса поверх спрайта (по эталону Пустыни): шлем-жёлудь, как у стрелков
+ * акта; у броненосцев на спине красный каплевидный щит с белой «ёлочкой» (вершиной вперёд,
+ * остриём назад); у жнецов в жвалах бородовидный топор, лезвием вперёд.
+ */
+export function drawSoldierGearForest(ctx: Ctx, x: number, y: number, angle: number, s: number, variant: number, armored: boolean): void {
+  const k = s / 0.8;
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle) * 0.9;
+  const sx = -Math.sin(angle);
+  const sy = Math.cos(angle) * 0.9;
+  if (armored) {
+    const bx = x - fx * 4 * k;
+    const by = y - fy * 4 * k;
+    ctx.lineCap = 'round';
+    for (const [col, lw] of [[OUT, 3.2], ['#6e4320', 1.7]] as const) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw * k;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(bx + sx * d * 6 * k, by + sy * d * 6 * k);
+        ctx.lineTo(x + fx * 4.5 * k + sx * d * 5.5 * k, y + fy * 4.5 * k + sy * d * 5.5 * k);
+        ctx.stroke();
+      }
+    }
+    ctx.save();
+    ctx.translate(bx, by);
+    ctx.scale(1, 0.9);
+    ctx.rotate(angle);
+    ctx.scale(k, k);
+    kiteShield(ctx, -1, 0, 15, 20, Math.PI / 2);
+    ctx.restore();
+  }
+  if (variant === 2) {
+    ctx.save();
+    ctx.translate(x + fx * 19 * k, y + fy * 19 * k);
+    ctx.rotate(angle);
+    ctx.scale(k * 1.1, k * 1.1);
+    axe(ctx, -2, -7, 2, 9);
+    ctx.restore();
+  }
+  acornHelmet(ctx, x + fx * 10.5 * k, y + fy * 10.5 * k, 6.6 * k, angle);
+}
+
 /** Колода с воткнутым топором и пара колотых поленьев рядом. */
 function choppingBlock(ctx: Ctx, x: number, y: number, s: number): void {
   ctx.save();

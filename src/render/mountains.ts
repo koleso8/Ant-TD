@@ -7,7 +7,7 @@
 import { TAU, type Vec } from '../engine/math';
 import type { Rng } from '../engine/rng';
 import { ANT_WORKER, anthillMound, circle, drawAnt, drawShadow, ell, fs, outline, pennant } from './art';
-import { antCrest, brass, jit, woodPole } from './kit';
+import { antCrest, brass, jit, lightDir, woodPole } from './kit';
 import { PAL } from './palette';
 
 type Ctx = CanvasRenderingContext2D;
@@ -645,6 +645,218 @@ function woodShield(ctx: Ctx, x: number, y: number, r: number): void {
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ell(ctx, x - r * 0.4, y - r * 0.45, r * 0.25, r * 0.13, -0.5);
   ctx.fill();
+}
+
+/**
+ * Деревянный щит-«утюг» на спине солдата Гор (оси щита: x — вперёд по телу): прямой верх у груди,
+ * бока сначала идут ровно, потом сходятся в остриё назад; доски вдоль тела, красный шеврон
+ * с белой кромкой вершиной вперёд, тонкая железная оковка. Без умбона и парных заклёпок —
+ * иначе мишень или глаза.
+ */
+function heaterShield(ctx: Ctx, x: number, y: number, r: number, angle: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.9);
+  ctx.rotate(angle);
+  const path = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(r * 0.7, -r * 0.88);
+    ctx.quadraticCurveTo(r * 0.82, 0, r * 0.7, r * 0.88);
+    ctx.lineTo(-r * 0.25, r * 0.86);
+    ctx.quadraticCurveTo(-r * 0.75, r * 0.78, -r * 1.25, 0);
+    ctx.quadraticCurveTo(-r * 0.75, -r * 0.78, -r * 0.25, -r * 0.86);
+    ctx.closePath();
+  };
+  const [lx, ly] = lightDir(angle);
+  path();
+  outline(ctx, 1.8);
+  const g = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+  g.addColorStop(0, '#dcaa6e');
+  g.addColorStop(0.55, '#a46c38');
+  g.addColorStop(1, '#6a4220');
+  fs(ctx, g);
+  ctx.save();
+  path();
+  ctx.clip();
+  // Доски вдоль тела, швы чуть неровно, пара сучков.
+  ctx.strokeStyle = 'rgba(55,30,12,0.55)';
+  ctx.lineWidth = Math.max(0.6, r * 0.08);
+  for (const py of [-0.5, -0.04, 0.46]) {
+    ctx.beginPath(); ctx.moveTo(-r * 1.3, py * r); ctx.lineTo(r, py * r + r * 0.04); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(70,40,16,0.5)';
+  ell(ctx, -r * 0.55, r * 0.22, r * 0.12, r * 0.07, 0);
+  ctx.fill();
+  // Шеврон вершиной вперёд: белая подкладка, поверх красный.
+  const chevron = (w: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.75, -r * 1.1);
+    ctx.lineTo(r * 0.28, 0);
+    ctx.lineTo(-r * 0.75, r * 1.1);
+    ctx.lineWidth = w;
+    ctx.stroke();
+  };
+  ctx.lineJoin = 'miter';
+  ctx.strokeStyle = '#f1ebdf';
+  chevron(r * 0.62);
+  ctx.strokeStyle = '#c8452f';
+  chevron(r * 0.42);
+  ctx.strokeStyle = 'rgba(255,215,195,0.4)';
+  ctx.save();
+  ctx.translate(lx * r * 0.08, ly * r * 0.08);
+  chevron(r * 0.1);
+  ctx.restore();
+  ctx.restore();
+  // Тонкая железная оковка.
+  path();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = r * 0.26;
+  ctx.stroke();
+  ctx.strokeStyle = '#5c626b';
+  ctx.lineWidth = r * 0.12;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Тирольская шляпа солдата (вид сверху, оси: x — вперёд): широкие поля заметно больше головы
+ * и с тенью на тело, сзади загнуты (светлая кромка); тулья яйцом носиком вперёд, без чёрного
+ * контура, объём градиентом и тенью на поля — круглая тулья в чёрном кольце читалась зелёным
+ * глазом, залом вдоль тульи — жуком. Красная лента и перо только с одного бока.
+ */
+function soldierHat(ctx: Ctx, x: number, y: number, r: number, angle: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.9);
+  ctx.rotate(angle);
+  const [lx, ly] = lightDir(angle);
+  const brim = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(r * 1.08, 0);
+    ctx.bezierCurveTo(r * 1.04, -r * 0.66, r * 0.2, -r * 0.95, -r * 0.45, -r * 0.9);
+    ctx.bezierCurveTo(-r * 1.05, -r * 0.84, -r * 1.18, -r * 0.42, -r * 1.18, 0);
+    ctx.bezierCurveTo(-r * 1.18, r * 0.42, -r * 1.05, r * 0.84, -r * 0.45, r * 0.9);
+    ctx.bezierCurveTo(r * 0.2, r * 0.95, r * 1.04, r * 0.66, r * 1.08, 0);
+    ctx.closePath();
+  };
+  const crown = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(r * 0.5, 0);
+    ctx.bezierCurveTo(r * 0.44, -r * 0.46, -r * 0.8, -r * 0.52, -r * 0.8, 0);
+    ctx.bezierCurveTo(-r * 0.8, r * 0.52, r * 0.44, r * 0.46, r * 0.5, 0);
+    ctx.closePath();
+  };
+  // Тень полей на теле муравья.
+  ctx.save();
+  ctx.translate(-lx * r * 0.3, -ly * r * 0.3);
+  brim();
+  ctx.fillStyle = 'rgba(35,15,5,0.3)';
+  ctx.fill();
+  ctx.restore();
+  // Перо: от ленты на боку назад и в сторону.
+  ctx.save();
+  ctx.translate(-r * 0.3, r * 0.48);
+  ctx.rotate(Math.PI - 0.5);
+  const fl = r * 2.5;
+  const fw = r * 0.52;
+  const feather = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(fl * 0.45, -fw * 1.2, fl, -fw * 0.2);
+    ctx.quadraticCurveTo(fl * 0.5, fw * 0.9, 0, 0);
+    ctx.closePath();
+  };
+  feather();
+  outline(ctx, 1.4);
+  fs(ctx, '#ece6d8');
+  ctx.save();
+  feather();
+  ctx.clip();
+  ctx.fillStyle = '#3a3128';
+  ctx.fillRect(fl * 0.72, -fw * 2, fl, fw * 4);
+  ctx.fillStyle = '#9a8468';
+  ctx.fillRect(fl * 0.48, -fw * 2, fl * 0.07, fw * 4);
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(70,55,40,0.7)';
+  ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(fl * 0.5, -fw * 0.15, fl * 0.95, -fw * 0.2); ctx.stroke();
+  ctx.restore();
+  // Поля.
+  brim();
+  outline(ctx, 1.5);
+  let g = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+  g.addColorStop(0, '#7fa65e');
+  g.addColorStop(0.6, '#4e7a40');
+  g.addColorStop(1, '#30502a');
+  fs(ctx, g);
+  // Загнутые сзади поля: светлая кромка по задней половине.
+  ctx.strokeStyle = 'rgba(205,232,180,0.55)';
+  ctx.lineWidth = r * 0.11;
+  ctx.beginPath(); ctx.ellipse(-r * 0.1, 0, r * 0.98, r * 0.78, 0, Math.PI * 0.62, Math.PI * 1.38); ctx.stroke();
+  // Тень тульи на полях, потом сама тулья — без чёрного контура.
+  ctx.save();
+  ctx.translate(-lx * r * 0.2, -ly * r * 0.2);
+  crown();
+  ctx.fillStyle = 'rgba(20,40,14,0.5)';
+  ctx.fill();
+  ctx.restore();
+  crown();
+  g = ctx.createLinearGradient(lx * r * 0.7 - r * 0.15, ly * r * 0.7, -lx * r * 0.7 - r * 0.15, -ly * r * 0.7);
+  g.addColorStop(0, '#9cc27a');
+  g.addColorStop(0.45, '#5a8644');
+  g.addColorStop(1, '#2f4c26');
+  fs(ctx, g);
+  ctx.strokeStyle = '#2a4420';
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+  // Красная лента — только на боку с пером.
+  ctx.save();
+  crown();
+  ctx.clip();
+  ctx.strokeStyle = '#c8452f';
+  ctx.lineWidth = r * 0.2;
+  ctx.beginPath(); ctx.ellipse(-r * 0.15, 0, r * 0.64, r * 0.49, 0, Math.PI * 0.3, Math.PI * 0.85); ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+}
+
+/**
+ * Снаряжение солдата Гор поверх спрайта (по эталону Пустыни): зелёная тирольская шляпа с пером,
+ * как у стрелков акта; у броненосцев на спине деревянный щит-«утюг» на ремнях; у жнецов
+ * в жвалах алебарда — древко поперёк, топор смотрит вперёд.
+ */
+export function drawSoldierGearMountains(ctx: Ctx, x: number, y: number, angle: number, s: number, variant: number, armored: boolean): void {
+  const k = s / 0.8;
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle) * 0.9;
+  const sx = -Math.sin(angle);
+  const sy = Math.cos(angle) * 0.9;
+  if (armored) {
+    const bx = x - fx * 4 * k;
+    const by = y - fy * 4 * k;
+    ctx.lineCap = 'round';
+    for (const [col, lw] of [[OUT, 3.4], ['#6e4320', 1.8]] as const) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw * k;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(bx + sx * d * 6.5 * k, by + sy * d * 6.5 * k);
+        ctx.lineTo(x + fx * 4.5 * k + sx * d * 5.5 * k, y + fy * 4.5 * k + sy * d * 5.5 * k);
+        ctx.stroke();
+      }
+    }
+    heaterShield(ctx, bx, by, 8.5 * k, angle);
+  }
+  if (variant === 2) {
+    ctx.save();
+    ctx.translate(x + fx * 19 * k, y + fy * 19 * k);
+    ctx.rotate(angle);
+    ctx.scale(k, k);
+    halberd(ctx, -2, -6, 5, 14);
+    ctx.restore();
+  }
+  soldierHat(ctx, x + fx * 10 * k, y + fy * 10 * k, 7.2 * k, angle);
 }
 
 /** Окно со ставнями: стекло с переплётом и зелёные ставни с косой доской. */

@@ -1,11 +1,15 @@
 import { clamp, dist, roundRect, TAU, type Vec } from '../engine/math';
-import { CELL, DIFFICULTIES, LOGICAL_H, LOGICAL_W, SPELLS, TOWERS, TOWER_ORDER, type SpecDef, type TowerKind } from './config';
+import { CELL, DIFFICULTIES, ENEMIES, LOGICAL_H, LOGICAL_W, SPELLS, TOWERS, TOWER_ORDER, type EnemyKind, type SpecDef, type TowerKind } from './config';
 import { TUTORIAL, levelSize, type LevelDef } from './levels';
 import { ACTS, LEVELS, LEVEL_ACT, THEMES } from './campaign';
 import { ENDLESS } from './endless';
 import { PERKS } from './perks';
+import { BESTIARY, bestiaryEntry, foeStats, homeAct } from './bestiary';
+import { BOONS, boonDef, type BoonGroup, type BoonId } from './boons';
 import { freeStars, totalStars } from './progress';
-import { actFinale, actTitle, difficultyText, gameTitle, getLang, LANGS, levelText, perkText, spellText, t, targetText, towerText } from './i18n';
+import {
+  actFinale, actTitle, boonText, difficultyText, enemyName, foeText, gameTitle, getLang, LANGS, levelText, perkText, spellText, t, targetText, towerText, type FoeText,
+} from './i18n';
 import { Path, snapWaypoints } from './path';
 import type { Game } from './game';
 import { canInstall, fullscreenSupported, isInstalledApp, manualInstall, promptInstall } from '../engine/device';
@@ -13,7 +17,8 @@ import type { Tower } from './tower';
 import { PAL } from '../render/palette';
 import { drawText, measure, wrapText } from '../render/text';
 import {
-  circle, drawAcidGlob, drawFlagIcon, drawHero, drawHoney, drawLarva, drawSporeCloud, drawStar, drawTowerIcon, ell, outline, pennant, twig,
+  ANT_SOLDIER, circle, drawAcidGlob, drawAnt, drawFlagIcon, drawHero, drawHoney, drawLarva, drawShadow, drawSporeCloud, drawStar, drawTowerIcon, ell, outline,
+  pennant, twig,
 } from '../render/art';
 
 interface Btn {
@@ -26,6 +31,24 @@ interface Btn {
 }
 
 const R_MENU = 92;
+/**
+ * Полуразмах врага в игре, px (с усами и лапами): по нему образец подгоняется под медальон.
+ * Радиус из config.ts для этого не годится: он про столкновения, а не про рисунок.
+ */
+/** Цвета групп даров: основной, светлый и тёмный. По ним различаются карточки и значки в бою. */
+const BOON_TINT: Record<BoonGroup, readonly [string, string, string]> = {
+  towers: ['#3c8a2b', '#8fd66a', '#1f4a17'],
+  soldiers: ['#2f6a9a', '#8fd3ff', '#143350'],
+  spells: ['#6f3f91', '#c79be6', '#3a1f50'],
+  colony: ['#a55a14', '#f2ad4e', '#4a2606'],
+};
+
+const FOE_EXTENT: Record<EnemyKind, number> = {
+  termite: 27, spider: 32, beetle: 32, wasp: 30, soldierTermite: 33, blackAnt: 27, hornet: 37, slug: 34, rhino: 56,
+  queen: 58, dragonfly: 29, leech: 27, bomber: 30, empress: 70, scarab: 34, scorpion: 33, woodlouse: 30,
+  grasshopper: 27, centipede: 34, centipedeHalf: 20, armyAnt: 25, iceBug: 32, iceSnail: 40, silkworm: 26,
+  cocoon: 18, silkMoth: 27, tick: 20, mantis: 31, firefly: 28,
+};
 const OPT_R = 42;
 
 /** Название башни на текущем языке: базовое или имя специализации. */
@@ -164,9 +187,15 @@ export class UI {
   private hoverSpecPending = false;
   /** Заклинание под курсором или выбранное: его описание идёт в панель. */
   hoverSpell: number | null = null;
+  /** Дар, на значке которого стоит курсор. */
+  private hoverBoon: BoonId | null = null;
   /** Курсор над кнопкой режима цели: её описание идёт в панель. */
   private hoverTarget = false;
   private miniPaths = new Map<string, Path[]>();
+  /** Силуэты ещё не встреченных врагов для меню «Враги». */
+  private readonly silhouettes = new Map<string, HTMLCanvasElement>();
+  /** Кнопка всплывающей карточки врага: в список попадает последней, меню постройки поверх неё главнее. */
+  private toastBtn: Btn | null = null;
   /** Сдвиг текущей группы интерфейса: угловые блоки прижимаются к краям экрана. */
   private gx = 0;
   private gy = 0;
@@ -247,11 +276,13 @@ export class UI {
     this.hoverSpec = null;
     this.hoverSpecPending = false;
     this.hoverSpell = null;
+    this.hoverBoon = null;
     this.anchors.clear();
     const g = this.g;
     switch (g.state) {
       case 'playing':
         if (g.mode === 'endless') this.drawEntranceArrows(ctx);
+        this.drawFoeToast(ctx);
         this.drawSelection(ctx);
         this.drawHud(ctx);
         this.drawWaveButton(ctx);
@@ -259,13 +290,17 @@ export class UI {
         this.drawInfo(ctx);
         if (g.camHint > 0) this.drawCamHint(ctx);
         if (!g.paused) g.tutorial?.draw(ctx, g);
+        if (this.toastBtn) this.buttons.push(this.toastBtn);
         if (g.paused) this.drawPause(ctx);
+        else if (g.foeCard) this.drawFoeCard(ctx);
+        else if (g.boonOffer) this.drawBoons(ctx);
         break;
       case 'title': this.drawTitle(ctx); break;
       case 'levels': this.drawLevels(ctx); break;
       case 'perks': this.drawPerks(ctx); break;
       case 'intro': this.drawIntro(ctx); break;
       case 'settings': this.drawSettings(ctx); break;
+      case 'bestiary': this.drawBestiary(ctx); break;
       default: this.drawEnd(ctx); break;
     }
     if (g.installHelp && (g.state === 'title' || g.state === 'settings')) this.drawInstallHelp(ctx);
@@ -345,6 +380,7 @@ export class UI {
     }
     this.mark('hud:gold', { x: 88, y: 42, w: 136, h: 46 });
     this.reg(this.buttons, { x: 14, y: 12, w: 440, h: 58, onTap: () => {} });
+    this.drawBoonChips(ctx);
     this.ungroup(ctx);
 
     this.group(ctx, o.r, o.t);
@@ -363,6 +399,76 @@ export class UI {
       }
     }, () => g.togglePause());
     this.ungroup(ctx);
+  }
+
+  /**
+   * Взятые дары под верхней панелью: кружок цвета группы со значком и счётчиком.
+   * Тап или курсор показывают в верхней подсказке, что дар даёт.
+   */
+  private drawBoonChips(ctx: CanvasRenderingContext2D): void {
+    const g = this.g;
+    const taken = BOONS.filter((b) => (g.world.boons[b.id] ?? 0) > 0);
+    if (!taken.length) return;
+    const hover = this.hov;
+    const r = 21;
+    taken.forEach((def, i) => {
+      const cx = 39 + i * 52;
+      const cy = 103;
+      const n = g.world.boons[def.id] ?? 0;
+      const [main, light, dark] = BOON_TINT[def.group];
+      const hot = !!hover && dist(hover.x, hover.y, cx, cy) <= r + 4;
+      if (hot) this.hoverBoon = def.id;
+      const on = hot || g.boonPeek === def.id;
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      circle(ctx, cx + 1, cy + 3, r + 3.5);
+      ctx.fill();
+      const rim = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+      rim.addColorStop(0, on ? '#fff6c8' : '#fbe6a0');
+      rim.addColorStop(0.45, on ? '#ffd95a' : '#cf9a3e');
+      rim.addColorStop(1, on ? '#e8b24a' : '#6b4315');
+      circle(ctx, cx, cy, r + 3.5);
+      ctx.fillStyle = rim;
+      ctx.fill();
+      outline(ctx, 2.5);
+      ctx.stroke();
+      const disc = ctx.createRadialGradient(cx - 6, cy - 7, 2, cx, cy, r);
+      disc.addColorStop(0, light);
+      disc.addColorStop(0.55, main);
+      disc.addColorStop(1, dark);
+      circle(ctx, cx, cy, r);
+      ctx.fillStyle = disc;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(42,22,8,0.9)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      if (on) {
+        // Выбранный значок: светлое кольцо снаружи.
+        circle(ctx, cx, cy, r + 6.5);
+        ctx.strokeStyle = 'rgba(255,246,200,0.95)';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+      ctx.save();
+      circle(ctx, cx, cy, r - 0.5);
+      ctx.clip();
+      ctx.translate(cx, cy);
+      ctx.scale(0.36, 0.36);
+      this.boonIcon(ctx, def.id, 0, 0);
+      ctx.restore();
+      if (n > 1) {
+        // Счётчик повторов на кромке кружка.
+        const label = `×${n}`;
+        const bw = measure(ctx, label, 14, 'bold') + 10;
+        roundRect(ctx, cx + r + 5 - bw, cy + r - 10, bw, 19, 9);
+        ctx.fillStyle = PAL.ui;
+        ctx.fill();
+        ctx.strokeStyle = PAL.uiGold;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        drawText(ctx, label, cx + r + 5 - bw / 2, cy + r, { size: 14, align: 'center', color: PAL.uiGold, stroke: null });
+      }
+      this.reg(this.buttons, { x: cx, y: cy, w: 52, h: 52, round: true, onTap: () => g.peekBoon(def.id) });
+    });
   }
 
   /** Хотбар заклинаний: три кнопки с перезарядкой; тап выбирает, следующий тап по полю применяет. */
@@ -447,7 +553,7 @@ export class UI {
     this.hoverTarget = !!hover && dist(hover.x, hover.y, 975, 668) <= 32;
     this.roundBtn(ctx, 975, 668, 32, () => {
       drawTargetIcon(ctx, 975, 660, 10);
-      drawText(ctx, td.short, 975, 684, { size: 11, align: 'center', color: PAL.uiGold, stroke: null });
+      drawText(ctx, targetText(td.id).short, 975, 684, { size: 11, align: 'center', color: PAL.uiGold, stroke: null });
     }, () => g.cycleTargetMode(), this.hoverTarget);
     const x = 1030;
     const y = 632;
@@ -484,7 +590,14 @@ export class UI {
     const sel = g.selected;
     let title = '';
     let desc = '';
-    if (this.hoverKind) {
+    const peek = this.hoverBoon ?? g.boonPeek;
+    if (peek) {
+      // Значок взятого дара: что он даёт и сколько раз взят.
+      const n = g.world.boons[peek] ?? 0;
+      const bx = boonText(peek, g.world);
+      title = `${bx.name}${n > 1 ? ` ×${n}` : ''} · ${t('boon.title')}`;
+      desc = boonDef(peek).value ? t('boon.spent') : bx.desc;
+    } else if (this.hoverKind) {
       const d = TOWERS[this.hoverKind];
       const tx = towerText(this.hoverKind);
       title = `${tx.name} · ${d.levels[0].cost}`;
@@ -992,6 +1105,7 @@ export class UI {
     this.dim(ctx);
     drawText(ctx, gameTitle(), 640, 30, { size: 28, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
     this.bigButton(ctx, 1170, 30, 180, 38, t('levels.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 16);
+    this.bigButton(ctx, 980, 30, 180, 38, t('levels.bestiary'), () => g.toBestiary(), 'rgba(90,60,30,0.9)', 16);
     // Вкладки актов.
     const tabX = 14;
     const tabW = 186;
@@ -1270,13 +1384,813 @@ export class UI {
     ctx.restore();
   }
 
+  // ───────────── дары бесконечной осады ─────────────
+
+  /** Значок дара внутри эмблемы радиуса около 56 px. */
+  private boonIcon(ctx: CanvasRenderingContext2D, id: BoonId, cx: number, cy: number): void {
+    const g = this.g;
+    const tower = (kind: TowerKind, s: number, dy: number): void => drawTowerIcon(ctx, kind, cx, cy + dy, s, 3);
+    switch (id) {
+      case 'acid': tower('acid', 0.98, 10); break;
+      case 'catapult': tower('catapult', 1.3, 8); break;
+      case 'spore': tower('spore', 1.2, 10); break;
+      case 'chitin': tower('barracks', 0.98, 10); break;
+      case 'range': {
+        // Круг дальности, как у выбранной башни, и сама башня в середине.
+        ctx.save();
+        ctx.translate(cx, cy + 4);
+        ctx.scale(1, 0.8);
+        ctx.fillStyle = 'rgba(255,255,255,0.14)';
+        circle(ctx, 0, 0, 50);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([9, 7]);
+        ctx.lineDashOffset = -g.clock * 14;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+        drawTowerIcon(ctx, 'acid', cx, cy + 4, 0.42, 3);
+        break;
+      }
+      case 'rate': {
+        // Секундомер: бронзовый корпус, светлый циферблат, бегущая стрелка.
+        ctx.save();
+        ctx.translate(cx, cy + 4);
+        outline(ctx, 3);
+        roundRect(ctx, -7, -44, 14, 12, 3);
+        ctx.fillStyle = '#c8923a';
+        ctx.fill();
+        ctx.stroke();
+        ctx.save();
+        ctx.rotate(0.7);
+        roundRect(ctx, -5, -42, 10, 9, 3);
+        ctx.fillStyle = '#c8923a';
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        const body = ctx.createLinearGradient(-30, -30, 30, 30);
+        body.addColorStop(0, '#fbe6a0');
+        body.addColorStop(1, '#8a5a1e');
+        circle(ctx, 0, 0, 33);
+        ctx.fillStyle = body;
+        ctx.fill();
+        ctx.stroke();
+        const face = ctx.createRadialGradient(-8, -10, 2, 0, 0, 27);
+        face.addColorStop(0, '#fffaf0');
+        face.addColorStop(1, '#e6d5b0');
+        circle(ctx, 0, 0, 26);
+        ctx.fillStyle = face;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(42,22,8,0.75)';
+        ctx.lineWidth = 2.2;
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * TAU;
+          const r0 = i % 3 === 0 ? 18 : 21;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+          ctx.lineTo(Math.cos(a) * 24, Math.sin(a) * 24);
+          ctx.stroke();
+        }
+        const a = g.clock * 2.4 - Math.PI / 2;
+        ctx.strokeStyle = '#c8362a';
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-Math.cos(a) * 5, -Math.sin(a) * 5);
+        ctx.lineTo(Math.cos(a) * 20, Math.sin(a) * 20);
+        ctx.stroke();
+        ctx.fillStyle = PAL.outline;
+        circle(ctx, 0, 0, 3.5);
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+      case 'jaws':
+        ctx.save();
+        ctx.translate(cx, cy + 2);
+        ctx.scale(1.7, 1.7);
+        drawShadow(ctx, 0, 6, 15, 6);
+        drawAnt(ctx, 0, 0, 0.5, 1, ANT_SOLDIER, g.clock * 9, true);
+        ctx.restore();
+        break;
+      case 'veteran':
+        ctx.save();
+        ctx.translate(cx, cy + 6);
+        ctx.scale(1.6, 1.6);
+        drawShadow(ctx, 0, 6, 15, 6);
+        drawHero(ctx, 0, 0, 0.5, g.clock * 8);
+        ctx.restore();
+        drawStar(ctx, cx + 30, cy - 30, 13, true);
+        break;
+      case 'spells': {
+        // Капля кислотного дождя в кольце со стрелкой: перезарядка идёт быстрее.
+        ctx.save();
+        ctx.translate(cx, cy + 2);
+        ctx.scale(3.2, 3.2);
+        drawAcidGlob(ctx, 0, 0, -Math.PI / 2);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(cx, cy + 2);
+        ctx.rotate(g.clock * 1.2);
+        for (const [col, lw] of [[PAL.outline, 9], [PAL.uiGold, 5]] as const) {
+          ctx.strokeStyle = col;
+          ctx.lineWidth = lw;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.arc(0, 0, 40, 0.5, TAU - 0.5);
+          ctx.stroke();
+        }
+        const ax = Math.cos(TAU - 0.5) * 40;
+        const ay = Math.sin(TAU - 0.5) * 40;
+        ctx.translate(ax, ay);
+        ctx.rotate(TAU - 0.5 + Math.PI / 2);
+        ctx.beginPath();
+        ctx.moveTo(13, 0);
+        ctx.lineTo(-6, -11);
+        ctx.lineTo(-6, 11);
+        ctx.closePath();
+        ctx.fillStyle = PAL.uiGold;
+        ctx.fill();
+        outline(ctx, 2.5);
+        ctx.stroke();
+        ctx.restore();
+        break;
+      }
+      case 'bounty':
+        // Большая капля нектара с зелёным плюсом: каждая награда больше.
+        drawHoney(ctx, cx - 4, cy + 8, 30);
+        circle(ctx, cx + 28, cy + 24, 15);
+        ctx.fillStyle = '#3c8a2b';
+        ctx.fill();
+        outline(ctx, 3);
+        ctx.stroke();
+        ctx.strokeStyle = PAL.uiLight;
+        ctx.lineWidth = 4.5;
+        ctx.beginPath();
+        ctx.moveTo(cx + 20, cy + 24);
+        ctx.lineTo(cx + 36, cy + 24);
+        ctx.moveTo(cx + 28, cy + 16);
+        ctx.lineTo(cx + 28, cy + 32);
+        ctx.stroke();
+        break;
+      case 'nectar':
+        // Горка капель: полная кладовая.
+        drawHoney(ctx, cx - 22, cy + 2, 17);
+        drawHoney(ctx, cx + 22, cy + 2, 17);
+        drawHoney(ctx, cx, cy - 16, 17);
+        drawHoney(ctx, cx, cy + 22, 21);
+        break;
+      case 'brood':
+        drawLarva(ctx, cx - 20, cy - 16, 15);
+        drawLarva(ctx, cx + 22, cy - 6, 15);
+        drawLarva(ctx, cx - 6, cy + 20, 17);
+        break;
+    }
+  }
+
+  /**
+   * Карточка дара: тёмное поле в золотой раме, сверху лента группы, эмблема со значком,
+   * название, что даёт, сколько раз уже взят и кнопка. k — насколько карточка уже выехала (0..1).
+   */
+  private boonCard(ctx: CanvasRenderingContext2D, id: BoonId, i: number, x: number, y0: number, w: number, h: number, k: number): void {
+    const g = this.g;
+    const def = boonDef(id);
+    const tx = boonText(id, g.world);
+    const taken = g.world.boons[id] ?? 0;
+    const hover = g.input.hover;
+    const ready = k >= 1;
+    const hot = ready && !!hover && hover.x >= x && hover.x <= x + w && hover.y >= y0 && hover.y <= y0 + h;
+    const y = y0 + (1 - k) * 60 - (hot ? 8 : 0);
+    const [main, light, dark] = BOON_TINT[def.group];
+    const cx = x + w / 2;
+    ctx.save();
+    ctx.globalAlpha = k;
+    // Тень и поле карточки.
+    roundRect(ctx, x + 3, y + 9, w, h, 24);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fill();
+    const field = ctx.createLinearGradient(0, y, 0, y + h);
+    field.addColorStop(0, '#5c3619');
+    field.addColorStop(0.45, '#3d2210');
+    field.addColorStop(1, '#2a1508');
+    roundRect(ctx, x, y, w, h, 24);
+    ctx.fillStyle = field;
+    ctx.fill();
+    // Отсвет цвета группы сверху: по нему карточки различаются с первого взгляда.
+    ctx.save();
+    roundRect(ctx, x, y, w, h, 24);
+    ctx.clip();
+    const glow = ctx.createRadialGradient(cx, y + 108, 10, cx, y + 108, 190);
+    glow.addColorStop(0, `${main}aa`);
+    glow.addColorStop(1, `${main}00`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+    // Золотая рама и тонкая внутренняя линия.
+    const gold = ctx.createLinearGradient(x, y, x + w, y + h);
+    gold.addColorStop(0, hot ? '#fff6c8' : '#fbe6a0');
+    gold.addColorStop(0.5, hot ? '#ffd95a' : '#cf9a3e');
+    gold.addColorStop(1, hot ? '#e8b24a' : '#7e521a');
+    roundRect(ctx, x, y, w, h, 24);
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 7;
+    ctx.stroke();
+    ctx.strokeStyle = gold;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    roundRect(ctx, x + 9, y + 9, w - 18, h - 18, 17);
+    ctx.strokeStyle = 'rgba(255,230,190,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Эмблема: бронзовый обод, внутри поле цвета группы и значок.
+    const ey = y + 112;
+    const er = 60;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    circle(ctx, cx + 1, ey + 5, er + 7);
+    ctx.fill();
+    const bronze = ctx.createLinearGradient(cx - er, ey - er, cx + er, ey + er);
+    bronze.addColorStop(0, '#fbe6a0');
+    bronze.addColorStop(0.4, '#cf9a3e');
+    bronze.addColorStop(1, '#6b4315');
+    circle(ctx, cx, ey, er + 7);
+    ctx.fillStyle = bronze;
+    ctx.fill();
+    outline(ctx, 3);
+    ctx.stroke();
+    const disc = ctx.createRadialGradient(cx - 18, ey - 24, 6, cx, ey, er);
+    disc.addColorStop(0, light);
+    disc.addColorStop(0.55, main);
+    disc.addColorStop(1, dark);
+    circle(ctx, cx, ey, er);
+    ctx.fillStyle = disc;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(42,22,8,0.9)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.save();
+    circle(ctx, cx, ey, er - 1);
+    ctx.clip();
+    this.boonIcon(ctx, id, cx, ey);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, ey, er + 4, Math.PI * 1.08, Math.PI * 1.45);
+    ctx.stroke();
+    // Лента группы на верхней кромке.
+    const label = t(`boon.group.${def.group}`);
+    const lw = measure(ctx, label, 14, 'bold') + 34;
+    roundRect(ctx, cx - lw / 2, y - 15, lw, 30, 15);
+    ctx.fillStyle = main;
+    ctx.fill();
+    outline(ctx, 3);
+    ctx.stroke();
+    roundRect(ctx, cx - lw / 2 + 3, y - 12, lw - 6, 10, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fill();
+    drawText(ctx, label, cx, y + 1, { size: 14, align: 'center', strokeWidth: 3 });
+    // Название и что даёт.
+    let ns = 24;
+    while (ns > 18 && measure(ctx, tx.name, ns, 'bold') > w - 36) ns--;
+    drawText(ctx, tx.name, cx, y + 208, { size: ns, align: 'center', color: PAL.uiGold, strokeWidth: 5 });
+    const lines = wrapText(ctx, tx.desc, w - 44, 17).slice(0, 4);
+    lines.forEach((ln, n) => drawText(ctx, ln, cx, y + 246 + n * 23, { size: 17, align: 'center', weight: 'normal', stroke: null }));
+    if (taken > 0) {
+      drawText(ctx, t('boon.taken', taken), cx, y + h - 76, { size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(255,217,90,0.9)' });
+    }
+    // Кнопка: тапать можно по всей карточке.
+    const bw = 170;
+    const bh = 42;
+    roundRect(ctx, cx - bw / 2, y + h - 60, bw, bh, 14);
+    ctx.fillStyle = hot ? '#4aa636' : '#3c8a2b';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    drawText(ctx, t('boon.pick'), cx, y + h - 39, { size: 20, align: 'center' });
+    ctx.restore();
+    this.reg(this.overlayButtons, { x, y: y0, w, h, onTap: () => g.chooseBoon(i) });
+  }
+
+  /** Выбор дара после каждой десятой волны осады: затемнённое поле и три карточки посередине. */
+  private drawBoons(ctx: CanvasRenderingContext2D): void {
+    const g = this.g;
+    const offer = g.boonOffer;
+    if (!offer) return;
+    const age = g.clock - g.boonShown;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, age / 0.25);
+    this.dim(ctx, 0.7);
+    drawText(ctx, t('boon.title'), 640, 84, { size: 46, align: 'center', color: PAL.uiGold, strokeWidth: 8 });
+    drawText(ctx, t('boon.sub', g.boonWave), 640, 130, { size: 18, align: 'center', weight: 'normal', color: PAL.uiLight, strokeWidth: 4 });
+    ctx.restore();
+    const w = 272;
+    const h = 392;
+    const gap = 30;
+    const x0 = 640 - (offer.length * w + (offer.length - 1) * gap) / 2;
+    offer.forEach((id, i) => {
+      const k = clamp((age - 0.1 - i * 0.09) / 0.35, 0, 1);
+      this.boonCard(ctx, id, i, x0 + i * (w + gap), 186, w, h, 1 - Math.pow(1 - k, 3));
+    });
+  }
+
+  // ───────────── карточки врагов ─────────────
+
+  /** Во сколько раз увеличить образец, чтобы он занял медальон радиуса r, и на сколько сдвинуть вниз летуна. */
+  private static specimenFit(kind: EnemyKind, r: number): { k: number; dx: number; dy: number } {
+    const d = ENEMIES[kind];
+    const k = Math.min(2.8, (r * 0.8) / FOE_EXTENT[kind]);
+    // Летун рисуется над своей тенью, скарабей идёт позади шара: сдвигаем, чтобы в круге стоял по центру.
+    return { k, dx: d.ball ? -5 * k : 0, dy: (d.flying ? 21 : 2) * k };
+  }
+
+  /** Тёмный силуэт ещё не встреченного врага: печётся один раз на вид и размер. */
+  private silhouette(kind: EnemyKind, r: number): HTMLCanvasElement | null {
+    const ps = Math.min(this.g.screen.pixelScale, 2.5);
+    const key = `${kind}:${r}:${ps.toFixed(1)}`;
+    let c = this.silhouettes.get(key) ?? null;
+    if (!c) {
+      c = document.createElement('canvas');
+      c.width = c.height = Math.ceil(r * 2 * ps);
+      const sctx = c.getContext('2d');
+      if (!sctx) return null;
+      sctx.scale(ps, ps);
+      const f = UI.specimenFit(kind, r);
+      this.g.drawSpecimen(sctx, kind, r + f.dx, r + f.dy, f.k);
+      sctx.globalCompositeOperation = 'source-in';
+      sctx.fillStyle = '#150d06';
+      sctx.fillRect(0, 0, r * 2, r * 2);
+      this.silhouettes.set(key, c);
+    }
+    return c;
+  }
+
+  /**
+   * Медальон врага: бронзовый обод, внутри клочок земли его акта с тропой и сам враг, шагающий
+   * на месте. Незнакомый враг — тёмный силуэт в сумерках со знаком вопроса.
+   */
+  private medallion(ctx: CanvasRenderingContext2D, kind: EnemyKind, cx: number, cy: number, r: number, known = true): void {
+    const theme = THEMES[ACTS[homeAct(kind)].theme];
+    const rim = Math.max(3, r * 0.1);
+    ctx.save();
+    // Тень под медальоном и обод: светлый сверху слева, тёмный снизу справа.
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    circle(ctx, cx + 1, cy + rim * 0.7, r + rim);
+    ctx.fill();
+    const bronze = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+    bronze.addColorStop(0, '#fbe6a0');
+    bronze.addColorStop(0.4, '#cf9a3e');
+    bronze.addColorStop(1, '#6b4315');
+    circle(ctx, cx, cy, r + rim);
+    ctx.fillStyle = bronze;
+    ctx.fill();
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = Math.max(1.5, r * 0.045);
+    ctx.stroke();
+    // Земля акта с тропой наискось.
+    ctx.save();
+    circle(ctx, cx, cy, r);
+    ctx.clip();
+    ctx.fillStyle = theme.grass;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    const big = r >= 50;
+    if (big) {
+      // Пятна светлой и тёмной травы и пучки травинок: на маленьком медальоне их не разглядеть.
+      for (const [px, py, pr, col] of [[-0.55, -0.62, 0.34, theme.grassLight], [0.5, -0.5, 0.3, theme.grassDark], [0.1, 0.92, 0.4, theme.grassDark]] as const) {
+        ctx.fillStyle = col;
+        ctx.globalAlpha = 0.55;
+        ell(ctx, cx + px * r, cy + py * r, pr * r, pr * r * 0.6);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.lineCap = 'round';
+    const trail = (dy: number): void => {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 1.3, cy + r * (0.46 + dy));
+      ctx.quadraticCurveTo(cx - r * 0.1, cy + r * (0.1 + dy), cx + r * 1.3, cy + r * (0.36 + dy));
+      ctx.stroke();
+    };
+    for (const [lw, col] of [[r * 0.98, theme.dirtDark], [r * 0.84, theme.dirt]] as const) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw;
+      trail(0);
+    }
+    // Утоптанная середина тропы светлее краёв.
+    ctx.strokeStyle = 'rgba(255,240,205,0.16)';
+    ctx.lineWidth = r * 0.4;
+    trail(-0.06);
+    if (big) {
+      // Камешки у кромки тропы и травинки: мелочь, по которой круг читается как клочок карты.
+      for (const [px, py, pr] of [[-0.62, -0.2, 0.07], [0.7, -0.16, 0.055], [0.3, 0.78, 0.065], [-0.3, 0.84, 0.045], [0.52, 0.52, 0.035], [-0.72, 0.3, 0.035]] as const) {
+        const sx = cx + px * r;
+        const sy = cy + py * r;
+        ctx.fillStyle = 'rgba(30,18,6,0.35)';
+        ell(ctx, sx + pr * r * 0.25, sy + pr * r * 0.5, pr * r * 1.1, pr * r * 0.6);
+        ctx.fill();
+        ell(ctx, sx, sy, pr * r, pr * r * 0.74);
+        ctx.fillStyle = theme.dirtDark;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(42,22,8,0.75)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ell(ctx, sx - pr * r * 0.3, sy - pr * r * 0.28, pr * r * 0.36, pr * r * 0.2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = theme.grassDark;
+      ctx.lineWidth = Math.max(1.5, r * 0.022);
+      for (const [px, py] of [[-0.42, -0.5], [0.22, -0.66], [0.62, -0.44], [-0.1, 0.9], [0.52, 0.8], [-0.56, 0.74]] as const) {
+        const sx = cx + px * r;
+        const sy = cy + py * r;
+        ctx.beginPath();
+        for (const [dx, dy] of [[-0.07, -0.1], [0, -0.14], [0.07, -0.09]] as const) {
+          ctx.moveTo(sx, sy);
+          ctx.quadraticCurveTo(sx + dx * r * 0.4, sy + dy * r * 0.7, sx + dx * r, sy + dy * r);
+        }
+        ctx.stroke();
+      }
+    }
+    const sun = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.45, 0, cx - r * 0.35, cy - r * 0.45, r * 1.2);
+    sun.addColorStop(0, 'rgba(255,250,220,0.3)');
+    sun.addColorStop(1, 'rgba(255,250,220,0)');
+    ctx.fillStyle = sun;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    if (!known) {
+      ctx.fillStyle = 'rgba(18,12,24,0.72)';
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      const sil = this.silhouette(kind, r);
+      if (sil) {
+        ctx.globalAlpha = 0.8;
+        ctx.drawImage(sil, cx - r, cy - r, r * 2, r * 2);
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      const f = UI.specimenFit(kind, r);
+      this.g.drawSpecimen(ctx, kind, cx + f.dx, cy + f.dy, f.k);
+    }
+    // Тень от обода по краю: круг выглядит вдавленным.
+    const edge = ctx.createRadialGradient(cx, cy, r * 0.62, cx, cy, r);
+    edge.addColorStop(0, 'rgba(20,10,0,0)');
+    edge.addColorStop(1, 'rgba(20,10,0,0.5)');
+    ctx.fillStyle = edge;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.restore();
+    circle(ctx, cx, cy, r);
+    ctx.strokeStyle = 'rgba(42,22,8,0.9)';
+    ctx.lineWidth = Math.max(1.2, r * 0.035);
+    ctx.stroke();
+    // Блик на ободе.
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = Math.max(1, rim * 0.28);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + rim * 0.55, Math.PI * 1.08, Math.PI * 1.45);
+    ctx.stroke();
+    if (!known) drawText(ctx, '?', cx, cy + r * 0.04, { size: Math.round(r * 0.9), align: 'center', color: PAL.uiGold, strokeWidth: Math.max(3, r * 0.14) });
+    ctx.restore();
+  }
+
+  /** Значок свойства в карточке: сердце, щит, стрелки скорости или жвало. */
+  private statIcon(ctx: CanvasRenderingContext2D, id: 'hp' | 'armor' | 'speed' | 'hit', x: number, y: number): void {
+    ctx.save();
+    ctx.translate(x, y);
+    outline(ctx, 2);
+    switch (id) {
+      case 'hp':
+        ctx.beginPath();
+        ctx.moveTo(0, 7);
+        ctx.bezierCurveTo(-11, -1, -6, -10, 0, -3.5);
+        ctx.bezierCurveTo(6, -10, 11, -1, 0, 7);
+        ctx.closePath();
+        ctx.fillStyle = '#e2584a';
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ell(ctx, -3.6, -3, 1.9, 1.3, -0.6);
+        ctx.fill();
+        break;
+      case 'armor': {
+        const shield = (): void => {
+          ctx.beginPath();
+          ctx.moveTo(0, -8);
+          ctx.lineTo(7, -5.5);
+          ctx.lineTo(7, 0);
+          ctx.quadraticCurveTo(6, 6, 0, 8.5);
+          ctx.quadraticCurveTo(-6, 6, -7, 0);
+          ctx.lineTo(-7, -5.5);
+          ctx.closePath();
+        };
+        shield();
+        ctx.fillStyle = '#7f9fc4';
+        ctx.fill();
+        ctx.save();
+        shield();
+        ctx.clip();
+        ctx.fillStyle = '#b9d2ea';
+        ctx.fillRect(-8, -9, 8, 18);
+        ctx.restore();
+        shield();
+        ctx.stroke();
+        break;
+      }
+      case 'speed':
+        for (const [col, lw] of [[PAL.outline, 5.5], ['#9ee86a', 2.8]] as const) {
+          ctx.strokeStyle = col;
+          ctx.lineWidth = lw;
+          ctx.beginPath();
+          for (const dx of [-5, 2]) {
+            ctx.moveTo(dx - 2, -6);
+            ctx.lineTo(dx + 4, 0);
+            ctx.lineTo(dx - 2, 6);
+          }
+          ctx.stroke();
+        }
+        break;
+      case 'hit':
+        // Жвалы клещами: два серпа остриями друг к другу.
+        for (const sx of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(sx * 1.6, 8.5);
+          ctx.quadraticCurveTo(sx * 17, 1, sx * 1, -9);
+          ctx.quadraticCurveTo(sx * 4.5, -1, sx * 1.6, 8.5);
+          ctx.closePath();
+          ctx.fillStyle = '#f5a03a';
+          ctx.lineWidth = 1.6;
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(-7.2, 3);
+        ctx.quadraticCurveTo(-8.2, -2, -4.4, -5.4);
+        ctx.stroke();
+        break;
+    }
+    ctx.restore();
+  }
+
+  /** Строка свойства: значок, подпись и шкала из пяти делений. */
+  private statRow(ctx: CanvasRenderingContext2D, id: 'hp' | 'armor' | 'speed' | 'hit', x: number, y: number, w: number, n: number): void {
+    const color = { hp: '#e2584a', armor: '#8fb4d8', speed: '#9ee86a', hit: '#f5a03a' }[id];
+    this.statIcon(ctx, id, x + 11, y);
+    drawText(ctx, t(`foe.${id}`), x + 30, y, { size: 16, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.9)' });
+    const pw = 20;
+    const gap = 4;
+    const x0 = x + w - 5 * pw - 4 * gap;
+    for (let i = 0; i < 5; i++) {
+      const px = x0 + i * (pw + gap);
+      roundRect(ctx, px, y - 6, pw, 12, 3.5);
+      ctx.fillStyle = i < n ? color : 'rgba(0,0,0,0.5)';
+      ctx.fill();
+      if (i < n) {
+        roundRect(ctx, px + 1.5, y - 4.5, pw - 3, 4, 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fill();
+      }
+      roundRect(ctx, px, y - 6, pw, 12, 3.5);
+      ctx.strokeStyle = i < n ? PAL.outline : 'rgba(255,230,190,0.18)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  /** Плашка-ярлык; возвращает свою ширину. */
+  private pill(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, fill: string): number {
+    const w = measure(ctx, text, 14, 'bold') + 22;
+    roundRect(ctx, x, y - 13, w, 26, 13);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    drawText(ctx, text, x + w / 2, y + 0.5, { size: 14, align: 'center', strokeWidth: 2.5 });
+    return w;
+  }
+
+  /** Разбивка текста карточки по строкам и её высота при ширине w. */
+  private foeLayout(ctx: CanvasRenderingContext2D, kind: EnemyKind, w: number): { tx: FoeText; desc: string[]; tip: string[]; forms: readonly EnemyKind[]; h: number } | null {
+    const tx = foeText(kind);
+    if (!tx) return null;
+    const desc = wrapText(ctx, tx.desc, w, 18);
+    const tip = wrapText(ctx, tx.tip, w - 32, 17);
+    const forms = bestiaryEntry(kind)?.forms ?? [];
+    return { tx, desc, tip, forms, h: 200 + desc.length * 25 + (forms.length ? 66 : 10) + 38 + tip.length * 23 + 12 };
+  }
+
+  /** Содержимое карточки: медальон, имя, ярлыки, свойства, описание, кто из него выходит и совет. */
+  private foeBlock(ctx: CanvasRenderingContext2D, kind: EnemyKind, x: number, y: number, w: number): void {
+    const L = this.foeLayout(ctx, kind, w);
+    if (!L) return;
+    const d = ENEMIES[kind];
+    const R = 80;
+    this.medallion(ctx, kind, x + R + 8, y + R + 8, R);
+    const tx = x + 2 * R + 40;
+    const tw = x + w - tx;
+    let size = 30;
+    while (size > 20 && measure(ctx, L.tx.name, size, 'bold') > tw) size--;
+    drawText(ctx, L.tx.name, tx, y + 20, { size, color: PAL.uiGold, strokeWidth: 5 });
+    // Ярлыки: босс, пеший или летает, сколько личинок уносит (если больше одной).
+    let px = tx;
+    if (d.boss) px += this.pill(ctx, px, y + 58, t('foe.boss'), '#a3311f') + 8;
+    px += this.pill(ctx, px, y + 58, d.flying ? t('foe.flying') : t('foe.ground'), d.flying ? '#2f6a9a' : '#6b5326') + 8;
+    if (d.livesCost > 1) this.pill(ctx, px, y + 58, t('foe.lives', d.livesCost), '#7a3c1c');
+    const st = foeStats(kind);
+    const sw = Math.min(tw, 330);
+    this.statRow(ctx, 'hp', tx, y + 94, sw, st.hp);
+    this.statRow(ctx, 'armor', tx, y + 120, sw, st.armor);
+    this.statRow(ctx, 'speed', tx, y + 146, sw, st.speed);
+    this.statRow(ctx, 'hit', tx, y + 172, sw, st.hit);
+    let cy = y + 212;
+    for (const ln of L.desc) {
+      drawText(ctx, ln, x, cy, { size: 18, weight: 'normal', stroke: null });
+      cy += 25;
+    }
+    if (L.forms.length) {
+      // Кто из него выходит: маленькие медальоны со стрелками.
+      let fx = x + 6;
+      const fy = cy + 30;
+      for (const f of L.forms) {
+        ctx.strokeStyle = PAL.uiGold;
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(fx, fy - 8);
+        ctx.lineTo(fx + 9, fy);
+        ctx.lineTo(fx, fy + 8);
+        ctx.stroke();
+        this.medallion(ctx, f, fx + 44, fy, 23);
+        const name = enemyName(f);
+        drawText(ctx, name, fx + 78, fy, { size: 15, color: PAL.uiLight, strokeWidth: 3 });
+        fx += 78 + measure(ctx, name, 15, 'bold') + 26;
+      }
+      cy += 66;
+    } else {
+      cy += 10;
+    }
+    // Совет: зелёная плашка с заголовком.
+    const th = 34 + L.tip.length * 23 + 8;
+    roundRect(ctx, x, cy - 8, w, th, 12);
+    ctx.fillStyle = 'rgba(60,138,43,0.3)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(158,232,106,0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    drawText(ctx, t('foe.tip'), x + 16, cy + 10, { size: 14, color: PAL.uiGreen, strokeWidth: 3 });
+    L.tip.forEach((ln, i) => drawText(ctx, ln, x + 16, cy + 36 + i * 23, { size: 17, weight: 'normal', stroke: null }));
+  }
+
+  /**
+   * Всплывающая карточка нового врага: вверху по центру, бой не останавливает. Висит несколько
+   * секунд; тап разворачивает её в полную карточку.
+   */
+  private drawFoeToast(ctx: CanvasRenderingContext2D): void {
+    const g = this.g;
+    this.toastBtn = null;
+    const toast = g.foeToast;
+    const tx = toast ? foeText(toast.kind) : null;
+    if (!toast || !tx) return;
+    const kin = Math.min(1, toast.age / 0.35);
+    const kout = clamp((g.foeToastLife - toast.age) / 0.35, 0, 1);
+    const k = (1 - Math.pow(1 - kin, 3)) * kout;
+    const o = this.hud();
+    const w = 490;
+    const h = 92;
+    const x = 640 - w / 2;
+    const y = 80 - (1 - k) * 46;
+    this.group(ctx, 0, o.t);
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    roundRect(ctx, x + 2, y + 5, w, h, 20);
+    ctx.fill();
+    this.panel(ctx, x, y, w, h, 20, 'rgba(43,22,8,0.95)');
+    roundRect(ctx, x, y, w, h, 20);
+    ctx.strokeStyle = 'rgba(255,217,90,0.8)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    this.medallion(ctx, toast.kind, x + 48, y + h / 2, 31);
+    const tx0 = x + 94;
+    const avail = w - 94 - 50;
+    drawText(ctx, t('foe.new').toUpperCase(), tx0, y + 19, { size: 13, color: 'rgba(255,217,90,0.9)', stroke: null });
+    let ns = 21;
+    while (ns > 15 && measure(ctx, tx.name, ns, 'bold') > avail) ns--;
+    drawText(ctx, tx.name, tx0, y + 43, { size: ns, color: PAL.uiLight, strokeWidth: 4 });
+    let ss = 16;
+    while (ss > 12 && measure(ctx, tx.short, ss, 'normal') > avail) ss--;
+    drawText(ctx, tx.short, tx0, y + 69, { size: ss, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.92)' });
+    // Кружок «i»: по тапу откроется полная карточка.
+    const pulse = 0.5 + 0.5 * Math.sin(g.clock * 4);
+    circle(ctx, x + w - 28, y + h / 2, 15);
+    ctx.fillStyle = `rgba(255,217,90,${(0.14 + 0.14 * pulse).toFixed(3)})`;
+    ctx.fill();
+    ctx.strokeStyle = PAL.uiGold;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    drawText(ctx, 'i', x + w - 28, y + h / 2 + 1, { size: 19, align: 'center', color: PAL.uiGold, strokeWidth: 3 });
+    ctx.restore();
+    this.toastBtn = { x: x + this.gx, y: y + this.gy, w, h, onTap: () => g.openFoeCard(toast.kind) };
+    this.ungroup(ctx);
+  }
+
+  /** Развёрнутая карточка нового врага поверх боя: бой стоит, пока её не закроют. */
+  private drawFoeCard(ctx: CanvasRenderingContext2D): void {
+    const g = this.g;
+    const kind = g.foeCard;
+    if (!kind) return;
+    const w = 660;
+    const L = this.foeLayout(ctx, kind, w - 60);
+    if (!L) return;
+    this.dim(ctx, 0.6);
+    const h = 52 + L.h + 84;
+    const x = 640 - w / 2;
+    const y = Math.max(16, 360 - h / 2);
+    this.panel(ctx, x, y, w, h, 26, 'rgba(43,22,8,0.96)');
+    roundRect(ctx, x, y, w, h, 26);
+    ctx.strokeStyle = 'rgba(255,217,90,0.7)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    drawText(ctx, t('foe.new').toUpperCase(), 640, y + 26, { size: 14, align: 'center', color: 'rgba(255,217,90,0.9)', stroke: null });
+    this.foeBlock(ctx, kind, x + 30, y + 48, w - 60);
+    this.bigButton(ctx, 640, y + h - 42, 220, 52, t('foe.ok'), () => g.closeFoeCard(), '#3c8a2b', 22);
+    // Тап мимо кнопки тоже закрывает карточку.
+    this.reg(this.overlayButtons, { ...this.viewRect(), onTap: () => g.closeFoeCard() });
+  }
+
+  /** Плитка врага в сетке меню «Враги»: медальон и имя; незнакомый — силуэт и вопросы. */
+  private foeTile(ctx: CanvasRenderingContext2D, kind: EnemyKind, x: number, y: number, w: number, h: number): void {
+    const g = this.g;
+    const known = g.hasSeen(kind);
+    const on = g.bestiaryPick === kind;
+    const hover = g.input.hover;
+    const hot = !!hover && hover.x >= x && hover.x <= x + w && hover.y >= y && hover.y <= y + h;
+    this.panel(ctx, x, y, w, h, 14, on ? '#3c6a2b' : hot ? 'rgba(70,40,15,0.92)' : PAL.ui);
+    if (on) {
+      roundRect(ctx, x, y, w, h, 14);
+      ctx.strokeStyle = PAL.uiGold;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+    this.medallion(ctx, kind, x + w / 2, y + 40, 29, known);
+    // Длинные имена через дефис («Термит-подрывник») переносятся по дефису.
+    const name = known ? enemyName(kind) : '? ? ?';
+    const lines = (measure(ctx, name, 13, 'bold') <= w - 6 ? [name] : wrapText(ctx, name.replace(/-/g, '- '), w - 6, 13, 'bold').map((ln) => ln.replace(/- /g, '-'))).slice(0, 2);
+    lines.forEach((ln, i) => drawText(ctx, ln, x + w / 2, y + 86 + (i - (lines.length - 1) / 2) * 14, {
+      size: 13, align: 'center', color: known ? PAL.uiLight : 'rgba(246,230,200,0.5)', strokeWidth: 2.5,
+    }));
+    this.reg(this.overlayButtons, { x, y, w, h, onTap: () => { g.bestiaryPick = kind; } });
+  }
+
+  /**
+   * Меню «Враги»: слева сетка всех врагов кампании, справа карточка выбранного. Карточка
+   * открывается, когда враг впервые выходит на тропу; до того в сетке стоит его силуэт.
+   */
+  private drawBestiary(ctx: CanvasRenderingContext2D): void {
+    const g = this.g;
+    this.dim(ctx, 0.74);
+    const met = BESTIARY.filter((e) => g.hasSeen(e.kind)).length;
+    drawText(ctx, t('bestiary.title'), 640, 34, { size: 36, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
+    drawText(ctx, t('bestiary.count', met, BESTIARY.length), 640, 66, { size: 15, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.8)' });
+    const gx = 24;
+    const gy = 88;
+    const tw = 98;
+    const th = 106;
+    const gap = 6;
+    BESTIARY.forEach((e, i) => this.foeTile(ctx, e.kind, gx + (i % 6) * (tw + gap), gy + Math.floor(i / 6) * (th + gap), tw, th));
+    const px = 658;
+    const pw = 598;
+    const ph = 5 * th + 4 * gap;
+    this.panel(ctx, px, gy, pw, ph, 22, 'rgba(43,22,8,0.92)');
+    const kind = g.bestiaryPick;
+    const act = actTitle(homeAct(kind));
+    if (g.hasSeen(kind)) {
+      this.foeBlock(ctx, kind, px + 26, gy + 24, pw - 52);
+      drawText(ctx, t('bestiary.where', act), px + pw - 26, gy + ph - 22, { size: 13, align: 'right', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.6)' });
+    } else {
+      this.medallion(ctx, kind, px + pw / 2, gy + 150, 96, false);
+      drawText(ctx, t('bestiary.unknown'), px + pw / 2, gy + 296, { size: 28, align: 'center', color: PAL.uiGold, strokeWidth: 5 });
+      wrapText(ctx, t('bestiary.unknownText'), pw - 120, 18).forEach((ln, i) => drawText(ctx, ln, px + pw / 2, gy + 340 + i * 25, {
+        size: 18, align: 'center', weight: 'normal', stroke: null,
+      }));
+      drawText(ctx, t('bestiary.where', act), px + pw / 2, gy + 410, { size: 16, align: 'center', color: PAL.uiLight, strokeWidth: 3 });
+    }
+    this.bigButton(ctx, 640, 684, 240, 48, t('bestiary.back'), () => g.closeBestiary(), 'rgba(90,60,30,0.9)', 20);
+  }
+
   private drawPause(ctx: CanvasRenderingContext2D): void {
     const g = this.g;
     this.dim(ctx);
     drawText(ctx, t('pause.title'), 640, 300, { size: 54, align: 'center', color: PAL.uiGold, strokeWidth: 8 });
-    this.bigButton(ctx, 400, 400, 220, 64, t('pause.resume'), () => g.togglePause(), '#3c8a2b', 22);
-    this.bigButton(ctx, 640, 400, 220, 64, t('pause.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 22);
-    this.bigButton(ctx, 880, 400, 220, 64, t('pause.levels'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
+    this.bigButton(ctx, 301, 400, 210, 64, t('pause.resume'), () => g.togglePause(), '#3c8a2b', 22);
+    this.bigButton(ctx, 527, 400, 210, 64, t('pause.bestiary'), () => g.toBestiary(), 'rgba(90,60,30,0.9)', 22);
+    this.bigButton(ctx, 753, 400, 210, 64, t('pause.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 22);
+    this.bigButton(ctx, 979, 400, 210, 64, t('pause.levels'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
     drawText(ctx, t('pause.hint'), 640, 470, { size: 16, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' });
     this.reg(this.overlayButtons, { ...this.viewRect(), onTap: () => g.togglePause() });
   }

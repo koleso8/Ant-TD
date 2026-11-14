@@ -1,5 +1,5 @@
 import { SHEET } from './layout';
-import { BLACK, HERO, SOLDIER, WORKER, drawAntHD, type AntLook } from './ant';
+import { ARMY, BLACK, HERO, SOLDIER, WORKER, drawAntHD, type AntLook } from './ant';
 import { TERMITE_BOMBER, TERMITE_SOLDIER, TERMITE_WORKER, drawTermiteHD } from './termite';
 import { SPIDER, drawSpiderHD } from './spider';
 import { BEETLE, RHINO, drawBeetleHD } from './beetle';
@@ -7,6 +7,18 @@ import { HORNET, WASP, drawWaspHD } from './wasp';
 import { drawLeechHD, drawSlugHD } from './crawlers';
 import { drawDragonflyHD } from './dragonfly';
 import { drawQueenHD } from './royals';
+import { drawScarabHD } from './scarab';
+import { drawScorpionHD } from './scorpion';
+import { drawWoodlouseHD } from './woodlouse';
+import { drawGrasshopperHD } from './grasshopper';
+import { drawCentipedeHD } from './centipede';
+import { drawIceBugHD } from './icebug';
+import { drawIceSnailHD } from './icesnail';
+import { drawSilkwormHD } from './silkworm';
+import { drawSilkMothHD } from './silkmoth';
+import { drawTickHD } from './tick';
+import { drawMantisHD } from './mantis';
+import { drawFireflyHD } from './firefly';
 
 /**
  * Пекарня спрайтов (только dev): растеризует векторный рисунок в лист
@@ -43,6 +55,20 @@ export const SPECS: SheetSpec[] = [
   { name: 'dragonfly', title: 'Стрекоза', draw: (ctx, phase) => drawDragonflyHD(ctx, phase) },
   { name: 'queen', title: 'Термитная матка', draw: (ctx, phase) => drawQueenHD(ctx, phase, false) },
   { name: 'empress', title: 'Королева термитов', draw: (ctx, phase) => drawQueenHD(ctx, phase, true) },
+  { name: 'scarab', title: 'Скарабей', draw: (ctx, phase) => drawScarabHD(ctx, phase) },
+  { name: 'scorpion', title: 'Скорпион', draw: (ctx, phase) => drawScorpionHD(ctx, phase) },
+  { name: 'woodlouse', title: 'Мокрица', draw: (ctx, phase) => drawWoodlouseHD(ctx, phase) },
+  { name: 'grasshopper', title: 'Горный кузнечик', draw: (ctx, phase) => drawGrasshopperHD(ctx, phase) },
+  { name: 'centipede', title: 'Сколопендра', draw: (ctx, phase) => drawCentipedeHD(ctx, phase, false) },
+  { name: 'centipede_half', title: 'Половинка сколопендры', draw: (ctx, phase) => drawCentipedeHD(ctx, phase, true) },
+  { name: 'ant_army', title: 'Армейский муравей', draw: ant(ARMY) },
+  { name: 'ice_bug', title: 'Ледяной клоп', draw: (ctx, phase) => drawIceBugHD(ctx, phase) },
+  { name: 'ice_snail', title: 'Ледяная улитка', draw: (ctx, phase) => drawIceSnailHD(ctx, phase) },
+  { name: 'silkworm', title: 'Гусеница шелкопряда', draw: (ctx, phase) => drawSilkwormHD(ctx, phase) },
+  { name: 'silk_moth', title: 'Бабочка шелкопряда', draw: (ctx, phase) => drawSilkMothHD(ctx, phase) },
+  { name: 'tick', title: 'Клещ', draw: (ctx, phase) => drawTickHD(ctx, phase) },
+  { name: 'mantis', title: 'Богомол', draw: (ctx, phase) => drawMantisHD(ctx, phase) },
+  { name: 'firefly', title: 'Светлячок', draw: (ctx, phase) => drawFireflyHD(ctx, phase) },
 ];
 
 const DIRS = SHEET.directions.length;

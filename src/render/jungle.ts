@@ -7,7 +7,7 @@
 import { TAU, type Vec } from '../engine/math';
 import type { Rng } from '../engine/rng';
 import { ANT_WORKER, anthillMound, circle, drawAnt, drawShadow, ell, fs, outline, pennant } from './art';
-import { antCrest, jit, woodPole } from './kit';
+import { antCrest, jit, lightDir, woodPole } from './kit';
 import { PAL } from './palette';
 
 type Ctx = CanvasRenderingContext2D;
@@ -607,6 +607,164 @@ function elytraShield(ctx: Ctx, x: number, y: number, s: number, flip: number): 
   ell(ctx, 2.6, -4.5, 0.9, 2.6, 0.2);
   ctx.fill();
   ctx.restore();
+}
+
+/**
+ * Щит из ротанга на спине солдата Джунглей (оси: x — вперёд по телу): вытянутый шестигранник
+ * остриями вперёд и назад, плетение, обмотка кромки, поперёк красная крашеная полоса (продольный
+ * шов сделал бы из щита надкрылья жука), с заднего острия свисают три пера попугая.
+ * Без умбона и парных точек.
+ */
+function rattanShield(ctx: Ctx, x: number, y: number, r: number, angle: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, 0.9);
+  ctx.rotate(angle);
+  const [lx, ly] = lightDir(angle);
+  FEATHERS.forEach((c, i) => feather(ctx, -r * 1.0, (i - 1) * r * 0.14, r * 1.3, Math.PI + (i - 1) * 0.42, c));
+  const path = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(r * 1.12, 0);
+    ctx.lineTo(r * 0.55, -r * 0.74);
+    ctx.lineTo(-r * 0.6, -r * 0.74);
+    ctx.lineTo(-r * 1.18, 0);
+    ctx.lineTo(-r * 0.6, r * 0.74);
+    ctx.lineTo(r * 0.55, r * 0.74);
+    ctx.closePath();
+  };
+  ctx.lineJoin = 'round';
+  path();
+  outline(ctx, 1.8);
+  const g = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+  g.addColorStop(0, WICKER.hi);
+  g.addColorStop(0.5, WICKER.base);
+  g.addColorStop(1, WICKER.lo);
+  fs(ctx, g);
+  ctx.save();
+  path();
+  ctx.clip();
+  weave(ctx, -r * 1.3, -r, r * 1.3, r, Math.max(1.6, r * 0.27));
+  // Красная полоса поперёк с тёмными кромками.
+  ctx.fillStyle = 'rgba(40,20,10,0.75)';
+  ctx.fillRect(-r * 0.12, -r, r * 0.62, r * 2);
+  ctx.fillStyle = '#c8402c';
+  ctx.fillRect(-r * 0.06, -r, r * 0.5, r * 2);
+  ctx.fillStyle = '#f2c230';
+  ctx.fillRect(r * 0.14, -r, r * 0.1, r * 2);
+  ctx.restore();
+  // Обмотка кромки тёмным ротангом.
+  path();
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = r * 0.24;
+  ctx.stroke();
+  ctx.strokeStyle = '#8a6430';
+  ctx.lineWidth = r * 0.12;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Копьё солдата-жнеца (оси: x — вперёд по телу, древко поперёк жвал от (hx, hy) к (tx, ty)):
+ * светлый кремнёвый наконечник-лист со сколами по кромке — тёмный обсидиан в жвалах читался
+ * крылом, — обмотка лианой и два пера попугая.
+ */
+function soldierSpear(ctx: Ctx, hx: number, hy: number, tx: number, ty: number): void {
+  const len = Math.hypot(tx - hx, ty - hy) || 1;
+  const ux = (tx - hx) / len;
+  const uy = (ty - hy) / len;
+  const nx = uy;
+  const ny = -ux;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 3.8;
+  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke();
+  ctx.strokeStyle = '#8a5a2c';
+  ctx.lineWidth = 2.1;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,220,170,0.45)';
+  ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(hx + nx * 0.5, hy + ny * 0.5); ctx.lineTo(tx + nx * 0.5, ty + ny * 0.5); ctx.stroke();
+  const at = (a: number, b: number): [number, number] => [tx + ux * a + nx * b, ty + uy * a + ny * b];
+  FEATHERS.slice(0, 2).forEach((c, i) => feather(ctx, ...at(-1, 0), 8, Math.atan2(-uy, -ux) + (i ? -0.55 : 0.55), c));
+  const blade = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(...at(-1, 0));
+    ctx.quadraticCurveTo(...at(4, 5.2), ...at(13, 0));
+    ctx.quadraticCurveTo(...at(4, -5.2), ...at(-1, 0));
+    ctx.closePath();
+  };
+  blade();
+  const g = ctx.createLinearGradient(...at(4, 4), ...at(4, -4));
+  g.addColorStop(0, '#f4eedd');
+  g.addColorStop(0.5, '#c9bea2');
+  g.addColorStop(1, '#8a7f68');
+  outline(ctx, 1.4);
+  fs(ctx, g);
+  // Сколы по кромке и ребро.
+  ctx.save();
+  blade();
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(90,80,60,0.55)';
+  ctx.lineWidth = 0.6;
+  for (const [a, b] of [[1.5, 2.2], [4.5, 3.4], [8, 2.6], [3, -2.8], [6.5, -3.2], [10, -1.6]]) {
+    ctx.beginPath();
+    ctx.moveTo(...at(a - 1.2, b * 1.25));
+    ctx.quadraticCurveTo(...at(a, b * 0.55), ...at(a + 1.2, b * 1.25));
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,245,0.7)';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(...at(0, 0.6)); ctx.lineTo(...at(11, 0.3)); ctx.stroke();
+  ctx.restore();
+  vineKnot(ctx, ...at(-1.5, 0), 2.1);
+}
+
+/**
+ * Снаряжение солдата Джунглей поверх спрайта (по эталону Пустыни): шляпа-лист монстеры, как
+ * у стрелков акта; у броненосцев на спине щит из ротанга на лианах; у жнецов в жвалах копьё
+ * с кремнёвым наконечником и перьями.
+ */
+export function drawSoldierGearJungle(ctx: Ctx, x: number, y: number, angle: number, s: number, variant: number, armored: boolean): void {
+  const k = s / 0.8;
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle) * 0.9;
+  const sx = -Math.sin(angle);
+  const sy = Math.cos(angle) * 0.9;
+  if (armored) {
+    const bx = x - fx * 4 * k;
+    const by = y - fy * 4 * k;
+    ctx.lineCap = 'round';
+    for (const [col, lw] of [[OUT, 3.2], [VINE, 1.7]] as const) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw * k;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(bx + sx * d * 6 * k, by + sy * d * 6 * k);
+        ctx.lineTo(x + fx * 4.5 * k + sx * d * 5.5 * k, y + fy * 4.5 * k + sy * d * 5.5 * k);
+        ctx.stroke();
+      }
+    }
+    rattanShield(ctx, bx, by, 8.5 * k, angle);
+  }
+  if (variant === 2) {
+    ctx.save();
+    ctx.translate(x + fx * 19 * k, y + fy * 19 * k);
+    ctx.rotate(angle);
+    ctx.scale(k, k);
+    soldierSpear(ctx, -3, -8, 3, 9);
+    ctx.restore();
+  }
+  // Лист-шляпа на одной голове: короче, чем у стрелков, иначе закрывает и грудь.
+  const hx = x + fx * 18 * k;
+  const hy = y + fy * 18 * k;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2.6 * k;
+  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + fx * 3 * k, hy + fy * 3 * k); ctx.stroke();
+  ctx.strokeStyle = '#8ab84a';
+  ctx.lineWidth = 1.2 * k;
+  ctx.stroke();
+  monstera(ctx, hx, hy, 14 * k, angle + Math.PI, '#5cb84a');
 }
 
 /** Соломенная крыша из пальмовых листьев: крутой купол, рваный низ, ряды пучков, перевязка у конька. */

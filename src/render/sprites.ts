@@ -17,6 +17,20 @@ import leechUrl from '../assets/sprites/leech.webp';
 import dragonflyUrl from '../assets/sprites/dragonfly.webp';
 import queenUrl from '../assets/sprites/queen.webp';
 import empressUrl from '../assets/sprites/empress.webp';
+import scarabUrl from '../assets/sprites/scarab.webp';
+import scorpionUrl from '../assets/sprites/scorpion.webp';
+import woodlouseUrl from '../assets/sprites/woodlouse.webp';
+import grasshopperUrl from '../assets/sprites/grasshopper.webp';
+import centipedeUrl from '../assets/sprites/centipede.webp';
+import centipedeHalfUrl from '../assets/sprites/centipede_half.webp';
+import antArmyUrl from '../assets/sprites/ant_army.webp';
+import iceBugUrl from '../assets/sprites/ice_bug.webp';
+import iceSnailUrl from '../assets/sprites/ice_snail.webp';
+import silkwormUrl from '../assets/sprites/silkworm.webp';
+import silkMothUrl from '../assets/sprites/silk_moth.webp';
+import tickUrl from '../assets/sprites/tick.webp';
+import mantisUrl from '../assets/sprites/mantis.webp';
+import fireflyUrl from '../assets/sprites/firefly.webp';
 
 /**
  * Спрайт-листы в игре. Модуль только для браузера: симуляция в Node его не импортирует,
@@ -72,6 +86,20 @@ export function installSprites(): void {
     dragonfly: new SpriteSheet(dragonflyUrl),
     queen: new SpriteSheet(queenUrl),
     empress: new SpriteSheet(empressUrl),
+    scarab: new SpriteSheet(scarabUrl),
+    scorpion: new SpriteSheet(scorpionUrl),
+    woodlouse: new SpriteSheet(woodlouseUrl),
+    grasshopper: new SpriteSheet(grasshopperUrl),
+    centipede: new SpriteSheet(centipedeUrl),
+    centipedeHalf: new SpriteSheet(centipedeHalfUrl),
+    antArmy: new SpriteSheet(antArmyUrl),
+    iceBug: new SpriteSheet(iceBugUrl),
+    iceSnail: new SpriteSheet(iceSnailUrl),
+    silkworm: new SpriteSheet(silkwormUrl),
+    silkMoth: new SpriteSheet(silkMothUrl),
+    tick: new SpriteSheet(tickUrl),
+    mantis: new SpriteSheet(mantisUrl),
+    firefly: new SpriteSheet(fireflyUrl),
   };
   const s = sheets;
   setSpriteDrawer((kind, ctx, x, y, angle, scale, phase) => s[kind].draw(ctx, x, y, angle, phase, scale));

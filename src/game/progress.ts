@@ -1,4 +1,6 @@
-import { DIFFICULTIES, TARGET_MODES, type DifficultyId, type TargetMode } from './config';
+import { DIFFICULTIES, ENEMIES, TARGET_MODES, type DifficultyId, type EnemyKind, type TargetMode } from './config';
+import { LEVELS } from './campaign';
+import { TUTORIAL } from './levels';
 import { LANGS, type Lang } from './i18n';
 import { PERKS, starsSpent } from './perks';
 
@@ -33,6 +35,8 @@ export interface Progress {
   tutorialDone: boolean;
   /** Рекорды бесконечной осады по сложностям. */
   endless: Partial<Record<DifficultyId, EndlessRecord>>;
+  /** Виды врагов, которых игрок уже встречал: их карточки открыты в меню «Враги». */
+  seen: EnemyKind[];
 }
 
 const KEY = 'anthill-td-progress';
@@ -48,8 +52,22 @@ export function defaultSettings(): Settings {
 export function defaultProgress(): Progress {
   return {
     version: 5, stars: {}, perks: {}, difficulty: 'normal', beaten: {}, targetMode: 'first', settings: defaultSettings(),
-    tutorialDone: false, endless: {},
+    tutorialDone: false, endless: {}, seen: [],
   };
+}
+
+/**
+ * Сохранения до карточек врагов: кто уже брал звёзды, тот встречал всех врагов этих карт.
+ * Им карточки не всплывают заново, а в меню «Враги» они открыты сразу.
+ */
+function seenFromStars(stars: Record<string, number>, tutorialDone: boolean): EnemyKind[] {
+  const set = new Set<EnemyKind>();
+  const add = (lv: { waves: ReadonlyArray<{ groups: ReadonlyArray<{ kind: EnemyKind }> }> }): void => {
+    for (const w of lv.waves) for (const g of w.groups) set.add(g.kind);
+  };
+  if (tutorialDone) add(TUTORIAL);
+  for (const lv of LEVELS) if ((stars[lv.id] ?? 0) > 0) add(lv);
+  return [...set];
 }
 
 function volume(v: unknown, fallback: number): number {
@@ -79,6 +97,11 @@ export function loadProgress(): Progress {
       const d = validDifficulty(id);
       if (d && r && Number.isFinite(r.wave) && r.wave > 0) endless[d] = { wave: Math.floor(r.wave), kills: Math.max(0, Math.floor(r.kills) || 0) };
     }
+    // Сохранения до обучения: кто уже брал звёзды, тот его не проходил, но и учить его нечему.
+    const tutorialDone = typeof p.tutorialDone === 'boolean' ? p.tutorialDone : Object.values(stars).some((n) => n > 0);
+    const seen = Array.isArray(p.seen)
+      ? [...new Set(p.seen.filter((k): k is EnemyKind => typeof k === 'string' && k in ENEMIES))]
+      : seenFromStars(stars, tutorialDone);
     return {
       version: 5,
       stars,
@@ -92,9 +115,9 @@ export function loadProgress(): Progress {
         sfx: volume(s.sfx, def.sfx),
         fullscreen: typeof s.fullscreen === 'boolean' ? s.fullscreen : null,
       },
-      // Сохранения до обучения: кто уже брал звёзды, тот его не проходил, но и учить его нечему.
-      tutorialDone: typeof p.tutorialDone === 'boolean' ? p.tutorialDone : Object.values(stars).some((n) => n > 0),
+      tutorialDone,
       endless,
+      seen,
     };
   } catch {
     return defaultProgress();

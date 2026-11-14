@@ -1,7 +1,7 @@
 import { rand, TAU } from '../engine/math';
 import { PAL } from '../render/palette';
 import { drawText } from '../render/text';
-import { circle } from '../render/art';
+import { circle, drawSlash } from '../render/art';
 
 interface Particle {
   x: number; y: number; vx: number; vy: number;
@@ -10,15 +10,20 @@ interface Particle {
 interface FloatText {
   x: number; y: number; vy: number; life: number; max: number; text: string; color: string; size: number;
 }
+interface Slash {
+  x: number; y: number; angle: number; radius: number; life: number; max: number;
+}
 
-/** Частицы и всплывающие надписи. Без текстур: кружки, кольца, текст. */
+/** Частицы, следы взмахов и всплывающие надписи. Без текстур: кружки, кольца, серпы, текст. */
 export class Effects {
   particles: Particle[] = [];
   texts: FloatText[] = [];
+  slashes: Slash[] = [];
 
   clear(): void {
     this.particles.length = 0;
     this.texts.length = 0;
+    this.slashes.length = 0;
   }
 
   burst(x: number, y: number, n: number, color: string, speed: number, size: number, life: number, grav = 0): void {
@@ -33,6 +38,10 @@ export class Effects {
   }
   ring(x: number, y: number, size: number, color: string, life = 0.35): void {
     this.particles.push({ x, y, vx: 0, vy: 0, life, max: life, size, color, grav: 0, ring: true });
+  }
+  /** След взмаха богомола: серп перед ним в сторону angle; рисуется поверх юнитов, чтобы заслон его не закрывал. */
+  slash(x: number, y: number, angle: number, radius: number, life = 0.24): void {
+    this.slashes.push({ x, y, angle, radius, life, max: life });
   }
   text(txt: string, x: number, y: number, color: string, size = 22): void {
     this.texts.push({ x, y, vy: -46, life: 0.9, max: 0.9, text: txt, color, size });
@@ -68,9 +77,12 @@ export class Effects {
       t.y += t.vy * dt;
     }
     this.texts = this.texts.filter((t) => t.life > 0);
+    for (const s of this.slashes) s.life -= dt;
+    this.slashes = this.slashes.filter((s) => s.life > 0);
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
+    for (const s of this.slashes) drawSlash(ctx, s.x, s.y, s.angle, s.radius, 1 - s.life / s.max);
     for (const p of this.particles) {
       const k = p.life / p.max;
       if (p.ring) {

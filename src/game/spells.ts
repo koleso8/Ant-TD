@@ -79,7 +79,11 @@ export class SpellBook {
       y: p.y,
       rally: { x: p.x, y: p.y },
       rallyAngle: -Math.PI / 2,
-      stats: { soldierHp: Math.round(HERO.retinueHp * this.perks.soldierHp), soldierDmg: HERO.retinueDmg, respawn: 1e9 },
+      stats: {
+        soldierHp: Math.round(HERO.retinueHp * this.perks.soldierHp),
+        soldierDmg: [Math.round(HERO.retinueDmg[0] * this.perks.soldierDmg), Math.round(HERO.retinueDmg[1] * this.perks.soldierDmg)],
+        respawn: 1e9,
+      },
       specDef: null,
     };
     for (const s of this.recruits) s.dropTarget();

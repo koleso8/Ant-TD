@@ -1,14 +1,19 @@
 /**
  * Прогон баланса без браузера: игрок-робот играет каждый уровень несколькими
  * стратегиями и разными зёрнами случайности.
- * Запуск: `npm run sim [номер уровня|all|tutorial|endless] [зёрен] [easy|normal|hard]`.
+ * Запуск: `npm run sim [номер уровня|all|tutorial|endless] [зёрен] [easy|normal|hard] [none|random|greedy] [копий]`.
  * Бесконечную осаду робот играет до падения муравейника и сообщает, сколько волн отбил.
+ * Последний параметр — дары осады: none (по умолчанию) — робот их не берёт, random — берёт случайный
+ * из трёх, greedy — берёт тот, что выше в списке GREEDY (сначала урон башен). «Копий» — сколько раз
+ * подряд берётся выбранный дар (по умолчанию 1): так примеряют дары вдвое или втрое сильнее,
+ * не трогая цифры в src/game/boons.ts.
  */
 import { Rng } from '../src/engine/rng';
 import { TUTORIAL, type LevelDef } from '../src/game/levels';
 import { LEVELS } from '../src/game/campaign';
 import { ENDLESS } from '../src/game/endless';
 import { World } from '../src/game/world';
+import { BOON_EVERY, pickBoons, type BoonId } from '../src/game/boons';
 import { NO_PERKS, type Perks } from '../src/game/perks';
 import { DIFFICULTIES, type DifficultyDef, type TowerKind } from '../src/game/config';
 import { GreedyPolicy, type PolicyOptions } from './policy';
@@ -27,9 +32,17 @@ interface RunResult {
   heroDeaths: number;
   spells: number;
   kills: number;
+  /** Взятые дары с номером волны, которая шла в тот момент: «spore@12». */
+  boons: string[];
 }
 
-function runOnce(level: LevelDef, opts: PolicyOptions, seed: number, difficulty: DifficultyDef, perks: Perks = NO_PERKS): RunResult {
+type BoonMode = 'none' | 'random' | 'greedy';
+/** Что берёт жадный робот: урон башен, потом доход, потом всё остальное. */
+const GREEDY: BoonId[] = ['spore', 'rate', 'acid', 'range', 'bounty', 'nectar', 'catapult', 'jaws', 'chitin', 'spells', 'veteran', 'brood'];
+
+function runOnce(
+  level: LevelDef, opts: PolicyOptions, seed: number, difficulty: DifficultyDef, perks: Perks = NO_PERKS, boonMode: BoonMode = 'none', copies = 1,
+): RunResult {
   const rng = new Rng(seed);
   Math.random = () => rng.next();
   const w = new World(level, perks, difficulty);
@@ -37,9 +50,21 @@ function runOnce(level: LevelDef, opts: PolicyOptions, seed: number, difficulty:
   const dt = 1 / 60;
   const endless = w.waves.endless;
   const cap = endless ? 9000 : 2400;
+  const boons: string[] = [];
+  let offers = 0;
   while (w.state === 'playing' && w.time < cap) {
     policy.act(dt);
     w.step(dt);
+    // Дар за каждый десяток отбитых волн, как в игре (Game.offerBoons).
+    if (endless && boonMode !== 'none' && Math.floor(w.clearedWaves / BOON_EVERY) > offers) {
+      offers++;
+      const offer = pickBoons(w, 3);
+      const id = boonMode === 'greedy' ? GREEDY.find((b) => offer.includes(b)) : offer[0];
+      if (id) {
+        for (let c = 0; c < copies; c++) w.takeBoon(id);
+        boons.push(`${id}@${w.waves.index}`);
+      }
+    }
   }
   const leaks: number[] = [];
   const n = endless ? w.waves.index : level.waves.length;
@@ -56,6 +81,7 @@ function runOnce(level: LevelDef, opts: PolicyOptions, seed: number, difficulty:
     heroDeaths: w.stats.heroDeaths,
     spells: w.spells.casts,
     kills: w.stats.kills,
+    boons,
   };
 }
 
@@ -82,6 +108,8 @@ const args = process.argv.slice(2);
 const which = args[0] ?? 'all';
 const seeds = args[1] !== undefined ? Number(args[1]) : 3;
 const difficulty = DIFFICULTIES.find((d) => d.id === (args[2] ?? 'normal')) ?? DIFFICULTIES[1];
+const boonMode: BoonMode = args[3] === 'random' || args[3] === 'greedy' ? args[3] : 'none';
+const boonCopies = Math.max(1, Math.round(Number(args[4] ?? 1)) || 1);
 
 const runs: { title: string; level: LevelDef }[] = [];
 if (which === 'tutorial' || which === 'all') runs.push({ title: 'Обучение', level: TUTORIAL });
@@ -97,7 +125,7 @@ for (const { title, level } of runs) {
   console.log(`\n=== ${title}: ${level.name} (${waves} волн, ${cells} клеток, сложность: ${difficulty.name}) ===`);
   for (const pol of endless ? ENDLESS_POLICIES : POLICIES) {
     const results: RunResult[] = [];
-    for (let s = 1; s <= seeds; s++) results.push(runOnce(level, pol, 1000 + s * 7919, difficulty));
+    for (let s = 1; s <= seeds; s++) results.push(runOnce(level, pol, 1000 + s * 7919, difficulty, NO_PERKS, boonMode, boonCopies));
     const r0 = results[0];
     if (endless) {
       const done = results.map((r) => r.wavesDone);
@@ -108,6 +136,7 @@ for (const { title, level } of runs) {
       );
       console.log(`             утечки по волнам: [${r0.leaks.join(' ')}]`);
       console.log(`             урон: ${damageShare(r0.damage)}`);
+      if (boonMode !== 'none') console.log(`             дары (${boonMode}${boonCopies > 1 ? ` ×${boonCopies}` : ''}): ${results.map((r) => `[${r.boons.join(' ')}]`).join(' ')}`);
       continue;
     }
     const wins = results.filter((r) => r.won).length;

@@ -25,6 +25,10 @@ export interface AntLook {
   gaster: number;
   /** Доспех воеводы: шлем-жёлудь, лист-щит, копьё-шип, боевая раскраска. */
   hero: boolean;
+  /** Отдельный цвет головы (армейский муравей: светлая костяная голова на тёмном теле). */
+  headSkin?: AntSkin;
+  /** Длинные жвалы-серпы, скрещённые перед головой, вместо обычных коротких. */
+  sickle?: boolean;
 }
 
 export const WORKER_SKIN: AntSkin = { body: PAL.antBody, light: PAL.antLight, dark: PAL.antDark, shine: '#ffe3cf' };
@@ -36,6 +40,10 @@ export const WORKER: AntLook = { skin: WORKER_SKIN, head: 1, gaster: 1, hero: fa
 export const SOLDIER: AntLook = { skin: SOLDIER_SKIN, head: 1.35, gaster: 1.05, hero: false };
 export const HERO: AntLook = { skin: HERO_SKIN, head: 1.3, gaster: 1.08, hero: true };
 export const BLACK: AntLook = { skin: BLACK_SKIN, head: 1.05, gaster: 0.9, hero: false };
+/** Армейский муравей джунглей: тёмно-шоколадное тело, костяная голова, жвалы-серпы. */
+export const ARMY_SKIN: AntSkin = { body: '#8a4a1e', light: '#c88446', dark: '#3e1c08', shine: '#fff0d8' };
+export const ARMY_HEAD: AntSkin = { body: '#e6cf96', light: '#fff5d6', dark: '#a8894e', shine: '#fff0d8' };
+export const ARMY: AntLook = { skin: ARMY_SKIN, head: 1.3, gaster: 0.85, hero: false, headSkin: ARMY_HEAD, sickle: true };
 
 const OUT = PAL.outline;
 const TAU = Math.PI * 2;
@@ -274,11 +282,12 @@ export function drawAntHD(ctx: Ctx, phase: number, look: AntLook): void {
   ctx.quadraticCurveTo(11, 0, 14, 8.5);
   ctx.stroke();
 
-  // Жвалы: толстые, сходятся перед головой.
+  // Жвалы: толстые, сходятся перед головой; у армейского муравья — длинные серпы внахлёст.
   for (let side = -1; side <= 1; side += 2) {
     ctx.beginPath();
     ctx.moveTo(hx + 9 * hs, 5 * hs * side);
-    ctx.quadraticCurveTo(hx + 22 * hs, 9.5 * hs * side, hx + 24 * hs, 1.5 * hs * side);
+    if (look.sickle) ctx.quadraticCurveTo(hx + 30 * hs, 13 * hs * side, hx + 33 * hs, -2.5 * hs * side);
+    else ctx.quadraticCurveTo(hx + 22 * hs, 9.5 * hs * side, hx + 24 * hs, 1.5 * hs * side);
     ctx.strokeStyle = OUT;
     ctx.lineWidth = 7 * Math.sqrt(hs);
     ctx.stroke();
@@ -295,10 +304,19 @@ export function drawAntHD(ctx: Ctx, phase: number, look: AntLook): void {
   ctx.bezierCurveTo(hx - 14 * hs, 4 * hs, hx - 12 * hs, 12 * hs, hx - 4 * hs, 12.5 * hs);
   ctx.bezierCurveTo(hx + 5 * hs, 13 * hs, hx + 13 * hs, 9 * hs, hx + 13 * hs, 0);
   ctx.closePath();
-  fillOutline(ctx, shade(ctx, hx - hs, 0, 14 * hs, skin));
+  fillOutline(ctx, shade(ctx, hx - hs, 0, 14 * hs, look.headSkin ?? skin));
 
-  // Глаза: мультяшные, с бликом.
+  // Глаза: мультяшные, с бликом; на светлой голове белок сливается, поэтому там маленькие тёмные.
   for (let side = -1; side <= 1; side += 2) {
+    if (look.headSkin) {
+      ellipsePath(ctx, hx + 3.5 * hs, 8.2 * hs * side, 3 * hs, 2.4 * hs, side * 0.35);
+      ctx.fillStyle = '#24120a';
+      ctx.fill();
+      ctx.fillStyle = skin.shine;
+      ellipsePath(ctx, hx + 2.8 * hs, 7.5 * hs * side, 0.8 * hs, 0.7 * hs);
+      ctx.fill();
+      continue;
+    }
     ellipsePath(ctx, hx + 3 * hs, 7.5 * hs * side, 4.6 * hs, 3.8 * hs, side * 0.35);
     ctx.fillStyle = '#fff8f0';
     ctx.fill();

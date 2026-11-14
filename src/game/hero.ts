@@ -32,7 +32,7 @@ export class Hero implements Blocker {
   spin = 0;
   /** Оглушён «Напором» босса: не двигается, не бьёт и не пускает способность. */
   staggerTimer = 0;
-  readonly level: number;
+  level: number;
 
   /** Размер карты: «Напор» босса не выбрасывает героя за её край. */
   private readonly bounds: { w: number; h: number };
@@ -45,6 +45,14 @@ export class Hero implements Blocker {
 
   get stats() {
     return HERO.levels[this.level - 1];
+  }
+  /** Дар «Ветеран»: воевода на уровень выше; на поле сразу получает прибавку здоровья. */
+  promote(): void {
+    if (this.level >= HERO.levels.length) return;
+    this.level++;
+    const hp = this.stats.hp;
+    if (!this.dead) this.hp += hp - this.maxHp;
+    this.maxHp = hp;
   }
   get abilityReady(): boolean {
     return !this.dead && this.cooldown <= 0 && this.staggerTimer <= 0;

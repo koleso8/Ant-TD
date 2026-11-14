@@ -646,6 +646,53 @@ function leafShield(ctx: Ctx, x: number, y: number, w: number, h: number, tilt: 
   ctx.beginPath(); ctx.moveTo(x - w * 0.3, y - h * 0.4); ctx.quadraticCurveTo(x - w * 0.42, y, x - w * 0.12, y + h * 0.32); ctx.stroke();
 }
 
+/**
+ * Снаряжение солдата родного луга поверх спрайта (по эталону Пустыни): шлем из семечки
+ * подсолнуха, как у стрелков; у броненосцев на спине щит из осеннего листа на веточке поперёк,
+ * на паутинных лямках (лист чуть наискось, чтобы жилка не легла швом вдоль спины); у жнецов
+ * в жвалах копьё с шипом шиповника.
+ */
+export function drawSoldierGearMeadow(ctx: Ctx, x: number, y: number, angle: number, s: number, variant: number, armored: boolean): void {
+  const k = s / 0.8;
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle) * 0.9;
+  const sx = -Math.sin(angle);
+  const sy = Math.cos(angle) * 0.9;
+  if (armored) {
+    const bx = x - fx * 4 * k;
+    const by = y - fy * 4 * k;
+    // Паутинные лямки от щита к плечам.
+    ctx.lineCap = 'round';
+    for (const [col, lw] of [['rgba(50,30,20,0.6)', 2.6], [SILK, 1.3]] as const) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw * k;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(bx + sx * d * 5.5 * k, by + sy * d * 5.5 * k);
+        ctx.lineTo(x + fx * 4.5 * k + sx * d * 5.5 * k, y + fy * 4.5 * k + sy * d * 5.5 * k);
+        ctx.stroke();
+      }
+    }
+    ctx.save();
+    ctx.translate(bx, by);
+    ctx.scale(1, 0.9);
+    ctx.rotate(angle);
+    ctx.scale(k, k);
+    twig2(ctx, 1, -11.5, -1, 11.5, 2.4, 33);
+    leafBlade(ctx, 9, 2.9, 21, 7.5, Math.PI + 0.28, AUTUMN, 1.7);
+    ctx.restore();
+  }
+  if (variant === 2) {
+    ctx.save();
+    ctx.translate(x + fx * 19 * k, y + fy * 19 * k);
+    ctx.rotate(angle);
+    ctx.scale(k * 1.1, k * 1.1);
+    thornSpear(ctx, -3, -8, 3, 8);
+    ctx.restore();
+  }
+  seedHelmet(ctx, x + fx * 10.5 * k, y + fy * 10.5 * k, 6.4 * k, angle);
+}
+
 /** Вязанка хвороста на паутинной обвязке. */
 function twigBundle(ctx: Ctx, x: number, y: number): void {
   drawShadow(ctx, x + 1, y + 3, 14, 4, 0.2);

@@ -35,6 +35,14 @@ export interface Perks {
   /** Множитель перезарядки заклинаний (меньше единицы — быстрее). */
   spellCdMul: number;
   extraLives: number;
+  /** Только дары бесконечной осады (у перков за звёзды всегда 1): урон солдат казарм и дружины. */
+  soldierDmg: number;
+  /** Только дары: множитель перезарядки стреляющих башен (меньше единицы — чаще). */
+  rateMul: number;
+  /** Только дары: множитель дальности стреляющих башен. */
+  rangeMul: number;
+  /** Растёт с каждым даром: башни по нему понимают, что статистику пора пересчитать. */
+  rev: number;
 }
 
 export function perksFromRanks(ranks: Readonly<Record<string, number>>): Perks {
@@ -49,6 +57,10 @@ export function perksFromRanks(ranks: Readonly<Record<string, number>>): Perks {
     heroLevelBonus: r('hero'),
     spellCdMul: 1 - 0.08 * r('hero'),
     extraLives: 2 * r('lives'),
+    soldierDmg: 1,
+    rateMul: 1,
+    rangeMul: 1,
+    rev: 0,
   };
 }
 
@@ -60,10 +72,24 @@ export function starsSpent(ranks: Readonly<Record<string, number>>): number {
   return total;
 }
 
-/** Применить перки к статистике башни. */
+/** Применить перки и дары к статистике башни. */
 export function applyPerks(kind: TowerKind, s: TowerLevel, p: Perks): TowerLevel {
-  const scale = (d: readonly [number, number] | undefined, m: number): readonly [number, number] | undefined =>
-    d ? [Math.round(d[0] * m), Math.round(d[1] * m)] : undefined;
+  let out = applyOwn(kind, s, p);
+  if (kind === 'barracks') {
+    if (p.soldierDmg !== 1) out = { ...out, soldierDmg: scale(out.soldierDmg, p.soldierDmg) };
+    return out;
+  }
+  if (p.rangeMul !== 1) out = { ...out, range: Math.round(out.range * p.rangeMul) };
+  if (p.rateMul !== 1 && out.interval !== undefined) out = { ...out, interval: out.interval * p.rateMul };
+  return out;
+}
+
+function scale(d: readonly [number, number] | undefined, m: number): readonly [number, number] | undefined {
+  return d ? [Math.round(d[0] * m), Math.round(d[1] * m)] : undefined;
+}
+
+/** Множители самой башни: урон, здоровье солдат, яд. */
+function applyOwn(kind: TowerKind, s: TowerLevel, p: Perks): TowerLevel {
   switch (kind) {
     case 'acid':
       return p.acidDmg === 1 ? s : { ...s, damage: scale(s.damage, p.acidDmg) };

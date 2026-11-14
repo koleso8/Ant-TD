@@ -1,9 +1,12 @@
-import { DIFFICULTIES, HERO, SPELLS, TARGET_MODES, TOWERS, type DifficultyId, type SpellId, type TargetMode, type TowerKind } from './config';
+import { DIFFICULTIES, ENEMIES, HERO, SPELLS, TARGET_MODES, TOWERS, type DifficultyId, type EnemyKind, type SpellId, type TargetMode, type TowerKind } from './config';
 import { GAME_TITLE, TUTORIAL } from './levels';
 import { ACTS, LEVELS } from './campaign';
 import { MAP_TEXTS } from './maptexts';
 import { ENDLESS } from './endless';
 import { PERKS } from './perks';
+import { bestiaryEntry } from './bestiary';
+import { boonDef, type BoonId } from './boons';
+import type { World } from './world';
 
 /**
  * Языки. Русский — исходный: тексты лежат прямо в config.ts, levels.ts и perks.ts.
@@ -117,6 +120,44 @@ const UI_RU = {
   'portrait.sub': 'горизонтально: так удобнее играть',
   'fx.noNectar': 'Мало нектара',
   'fx.stomp': 'Напор!',
+  'fx.ballBroken': 'Шар разбит!',
+  'fx.sting': 'Жало!',
+  'fx.curl': 'В шар!',
+  'fx.leap': 'Прыжок!',
+  'fx.split': 'Надвое!',
+  'fx.cocoon': 'Кокон!',
+  'fx.hatch': 'Вылупилась!',
+  'fx.latch': 'Вцепился!',
+  'fx.slash': 'Режет!',
+  'boon.title': 'Дар королевы',
+  'boon.sub': 'Отбито волн: {0}. Выбери одно усиление: оно останется до конца осады.',
+  'boon.pick': 'Выбрать',
+  'boon.taken': 'уже взято: {0}',
+  'boon.spent': 'Разовый дар: нектар уже в кладовой.',
+  'boon.group.towers': 'Башни',
+  'boon.group.soldiers': 'Солдаты',
+  'boon.group.spells': 'Заклинания',
+  'boon.group.colony': 'Колония',
+  'foe.new': 'Новый враг',
+  'foe.more': 'подробнее',
+  'foe.ok': 'Понятно',
+  'foe.tip': 'Как бороться',
+  'foe.hp': 'Здоровье',
+  'foe.armor': 'Панцирь',
+  'foe.speed': 'Скорость',
+  'foe.hit': 'Удар',
+  'foe.ground': 'Пеший',
+  'foe.flying': 'Летает',
+  'foe.boss': 'Босс',
+  'foe.lives': 'Личинок уносит: {0}',
+  'bestiary.title': 'Враги',
+  'bestiary.count': 'Встречено {0} из {1}',
+  'bestiary.unknown': 'Ещё не встречен',
+  'bestiary.unknownText': 'Карточка откроется, когда этот враг впервые выйдет на тропу.',
+  'bestiary.where': 'Водится: {0}',
+  'bestiary.back': 'Назад',
+  'levels.bestiary': 'Враги',
+  'pause.bestiary': 'Враги',
   'fx.fell': '{0} пал!',
   'fx.cooldown': 'Перезарядка {0} с',
   'fx.target': 'Цель башен: {0}',
@@ -268,6 +309,44 @@ const UI_EN: Record<UiKey, string> = {
   'portrait.sub': 'landscape is easier to play',
   'fx.noNectar': 'Not enough nectar',
   'fx.stomp': 'Charge!',
+  'fx.ballBroken': 'Ball smashed!',
+  'fx.sting': 'Sting!',
+  'fx.curl': 'Curled up!',
+  'fx.leap': 'Leap!',
+  'fx.split': 'Split!',
+  'fx.cocoon': 'Cocoon!',
+  'fx.hatch': 'Hatched!',
+  'fx.latch': 'Latched on!',
+  'fx.slash': 'Slash!',
+  'boon.title': "Queen's Gift",
+  'boon.sub': 'Waves held: {0}. Choose one boost: it lasts until the siege ends.',
+  'boon.pick': 'Choose',
+  'boon.taken': 'already taken: {0}',
+  'boon.spent': 'One-time gift: the nectar is already in your stores.',
+  'boon.group.towers': 'Towers',
+  'boon.group.soldiers': 'Soldiers',
+  'boon.group.spells': 'Spells',
+  'boon.group.colony': 'Colony',
+  'foe.new': 'New enemy',
+  'foe.more': 'details',
+  'foe.ok': 'Got it',
+  'foe.tip': 'How to fight it',
+  'foe.hp': 'Health',
+  'foe.armor': 'Armor',
+  'foe.speed': 'Speed',
+  'foe.hit': 'Attack',
+  'foe.ground': 'On foot',
+  'foe.flying': 'Flies',
+  'foe.boss': 'Boss',
+  'foe.lives': 'Larvae taken: {0}',
+  'bestiary.title': 'Enemies',
+  'bestiary.count': 'Met {0} of {1}',
+  'bestiary.unknown': 'Not met yet',
+  'bestiary.unknownText': 'The card opens when this enemy first steps onto the path.',
+  'bestiary.where': 'Lives in: {0}',
+  'bestiary.back': 'Back',
+  'levels.bestiary': 'Enemies',
+  'pause.bestiary': 'Enemies',
   'fx.fell': '{0} has fallen!',
   'fx.cooldown': 'Recharging {0} s',
   'fx.target': 'Tower target: {0}',
@@ -424,6 +503,27 @@ export function targetText(id: TargetMode): Spec {
   return { name: d.name, short: d.short, desc: d.desc };
 }
 
+const BOONS_EN: Record<BoonId, Named> = {
+  acid: { name: 'Burning Acid', desc: 'Spitter damage +15%.' },
+  catapult: { name: 'Stone Seeds', desc: 'Catapult damage +15%.' },
+  spore: { name: 'Vicious Spores', desc: 'Mycelium and spore cloud poison +20%, clouds last longer.' },
+  rate: { name: 'Quick Shots', desc: 'Spitters, catapults and mycelium reload 8% faster.' },
+  range: { name: 'Sharp Lookouts', desc: 'Range of spitters, catapults and mycelium +6%.' },
+  chitin: { name: 'Thick Chitin', desc: 'Barracks and retinue soldier health +20%. Soldiers on the field heal at once.' },
+  jaws: { name: 'Sharp Mandibles', desc: 'Barracks and retinue soldier damage +20%.' },
+  veteran: { name: 'Veteran', desc: 'Warlord Mandible arrives one level higher.' },
+  spells: { name: 'Swift Runners', desc: 'Spells recharge 12% faster.' },
+  bounty: { name: 'Honeydew', desc: 'Nectar per enemy +15%.' },
+  nectar: { name: 'Full Pantry', desc: '+{0} nectar right now.' },
+  brood: { name: 'New Brood', desc: '+3 larvae right now.' },
+};
+/** Дар бесконечной осады на текущем языке; число в описании считается по ходу осады. */
+export function boonText(id: BoonId, w: World): Named {
+  const d = boonDef(id);
+  const tx = current === 'en' ? BOONS_EN[id] : { name: d.name, desc: d.desc };
+  return { name: tx.name, desc: d.value ? tx.desc.replace('{0}', String(d.value(w))) : tx.desc };
+}
+
 interface PerkText { name: string; desc: (rank: number) => string }
 const PERKS_EN: Record<string, PerkText> = {
   acidDmg: { name: 'Caustic Acid', desc: (r) => `Spitter damage +${r * 10}%` },
@@ -441,6 +541,163 @@ export function perkText(id: string): PerkText {
   return { name: p.name, desc: p.desc };
 }
 
+const ENEMY_NAMES_EN: Record<EnemyKind, string> = {
+  termite: 'Termite', spider: 'Spider', beetle: 'Shield Beetle', wasp: 'Wasp', soldierTermite: 'Soldier Termite',
+  blackAnt: 'Black Ant', hornet: 'Hornet', slug: 'Slug', rhino: 'Rhinoceros Beetle', queen: 'Termite Queen',
+  dragonfly: 'Dragonfly', leech: 'Leech', bomber: 'Bomber Termite', empress: 'Termite Empress', scarab: 'Scarab',
+  scorpion: 'Scorpion', woodlouse: 'Woodlouse', grasshopper: 'Mountain Grasshopper', centipede: 'Centipede',
+  centipedeHalf: 'Centipede Half', armyAnt: 'Army Ant', iceBug: 'Ice Bug', iceSnail: 'Ice Snail',
+  silkworm: 'Silkworm Caterpillar', cocoon: 'Silkworm Cocoon', silkMoth: 'Silk Moth', tick: 'Tick', mantis: 'Mantis',
+  firefly: 'Firefly',
+};
+/** Имя врага на текущем языке. */
+export function enemyName(kind: EnemyKind): string {
+  return current === 'en' ? ENEMY_NAMES_EN[kind] : ENEMIES[kind].name;
+}
+
+interface FoeNotes { short: string; desc: string; tip: string }
+const BESTIARY_EN: Partial<Record<EnemyKind, FoeNotes>> = {
+  termite: {
+    short: 'Weak, but comes in crowds.',
+    desc: 'A common termite: weak and slow, but there are always many of them.',
+    tip: 'Any tower will do. A catapult is good against a crowd.',
+  },
+  spider: {
+    short: 'Fast and tougher than a termite.',
+    desc: 'Runs fast and takes more hits than a termite: a single tower cannot finish it in time.',
+    tip: 'Hold it with barracks and finish it with spitters.',
+  },
+  wasp: {
+    short: 'Flies: barracks and catapults miss it.',
+    desc: 'Flies above the path. Soldiers cannot hold it and catapults cannot hit it.',
+    tip: 'Only spitters and mycelium hit flyers.',
+  },
+  beetle: {
+    short: 'Thick armor. Poison ignores it.',
+    desc: 'A slow beetle in thick armor: ordinary hits lose almost half their force.',
+    tip: 'Mycelium poison and acid rain go through armor, snipers pierce 60% of it.',
+  },
+  blackAnt: {
+    short: 'The fastest enemy on foot.',
+    desc: 'A raider ant from a rival colony: the fastest on foot, it slips past slow towers.',
+    tip: 'Slow it with spores and hold it with barracks right next to your towers.',
+  },
+  soldierTermite: {
+    short: 'A tough fighter in armor.',
+    desc: 'A soldier termite in armor: sturdy, and it hits our soldiers hard.',
+    tip: 'Hold it with upgraded barracks, hit it with poison and snipers.',
+  },
+  hornet: {
+    short: 'Flies fast and takes a beating.',
+    desc: 'A big wasp: flies fast and has twice the health.',
+    tip: 'You need upgraded spitters. Mycelium slows it inside the firing zone.',
+  },
+  slug: {
+    short: 'A mountain of health, wounds close up.',
+    desc: 'Barely crawls, but has a mountain of health, and its wounds close by themselves. Takes two larvae.',
+    tip: 'Hit it without pause and with several towers at once: any break gives its health back.',
+  },
+  rhino: {
+    short: 'Boss. Hold it too long and it Charges.',
+    desc: 'A boss in thick armor. Held for more than six seconds, it Charges: hurts and stuns the whole line, then pushes through for a few seconds.',
+    tip: 'Poison and snipers against the armor. After a Charge it can be held again: set up one line after another.',
+  },
+  queen: {
+    short: 'Boss. Spawns termites and heals.',
+    desc: 'A boss. Very slow, heals her own wounds and releases a pair of termites every eight seconds. Takes ten larvae.',
+    tip: 'A catapult mows down her brood. Hit the queen herself with everything you have, without pauses.',
+  },
+  dragonfly: {
+    short: 'The fastest flyer.',
+    desc: 'Fast and sturdy: it sweeps over the path before towers can zero in.',
+    tip: 'Place spitters in a chain along the path, with mycelium in the middle.',
+  },
+  leech: {
+    short: 'Sturdy, wounds close up.',
+    desc: 'Thick and slow, its wounds close before your eyes. Takes two larvae.',
+    tip: 'It heals through weak damage. Focus the fire of several towers in one place.',
+  },
+  bomber: {
+    short: 'Explodes next to soldiers when it dies.',
+    desc: 'A suicide termite: when it dies, it explodes and hurts soldiers and the warlord nearby.',
+    tip: 'Shoot it from afar, before it reaches the line.',
+  },
+  empress: {
+    short: 'The last boss of the termite mound.',
+    desc: 'A boss. Armor, a mountain of health, wounds that close, and every nine seconds two soldier termites come out from under her. If she reaches the anthill, she takes twenty larvae.',
+    tip: 'Poison goes past the armor. Hit the escort with area damage, replace the line after every Charge.',
+  },
+  scarab: {
+    short: 'The ball takes hits. Poison goes past it.',
+    desc: 'Rolls a ball in front of itself, and the ball takes every hit except poison. Without the ball the beetle runs almost twice as fast.',
+    tip: 'Poison it with mycelium. If you hit the ball, break it where you can finish the beetle.',
+  },
+  scorpion: {
+    short: 'Stings and breaks out of the line.',
+    desc: 'While held, it stings every four seconds: the defender is stunned and lets it go.',
+    tip: 'It gets past a single line. Place barracks in pairs or finish it with shooters while soldiers hold it.',
+  },
+  woodlouse: {
+    short: 'A strong hit makes it curl into a ball.',
+    desc: 'A strong hit makes it curl into a ball for three seconds: it rolls faster, its armor is nearly unbreakable, and a line cannot hold it.',
+    tip: 'Poison does not make it curl: mycelium works better here than heavy hits.',
+  },
+  grasshopper: {
+    short: 'Leaps over the line.',
+    desc: 'When soldiers step into its way, it leaps over them and runs on. The next leap comes in six seconds.',
+    tip: 'Put a second barracks farther along the path: after a leap it cannot jump for six seconds.',
+  },
+  centipede: {
+    short: 'Splits into two halves when it dies.',
+    desc: 'When it dies, it splits into two fast halves, and each runs on by itself. A whole one takes two larvae.',
+    tip: 'Kill it far from the anthill, where a catapult can cover the halves.',
+  },
+  armyAnt: {
+    short: 'Faster in a swarm. Use area damage.',
+    desc: 'Small and weak, but they march as a swarm: the more kin nearby, the faster each one runs.',
+    tip: 'Catapults and acid rain thin the swarm, and the survivors slow down.',
+  },
+  iceBug: {
+    short: 'Chills nearby towers: they fire slower.',
+    desc: 'A frost aura surrounds it: towers inside reload noticeably slower.',
+    tip: 'Hit it from afar: snipers and catapults reach it from outside the aura. Hold it with a line away from your towers.',
+  },
+  iceSnail: {
+    short: 'Lays ice: others run on it.',
+    desc: 'Leaves ice behind it for ten seconds. Other enemies on foot slide along it almost one and a half times faster.',
+    tip: 'Kill the snail early: without it the ice melts and the speed-up ends.',
+  },
+  silkworm: {
+    short: 'Leaves a cocoon when it dies. Break it!',
+    desc: 'When it dies, it wraps into a cocoon. In four seconds a fast moth flies out of it, and not every tower can reach a moth.',
+    tip: 'Finish the caterpillar inside tower range and hit the cocoon at once: it stands still, and free soldiers chop it too.',
+  },
+  tick: {
+    short: 'Drinks soldiers and heals. Use towers.',
+    desc: 'Latches onto a defender and heals by as much as it took. A weak line only feeds it.',
+    tip: 'Hit it with towers, not soldiers. If you must hold it, use Shellbacks: it drinks less through armor.',
+  },
+  mantis: {
+    short: 'Mows the whole line. Hit it from afar.',
+    desc: 'A sweep of its scythes hits every defender nearby at once: plain barracks melt in a second.',
+    tip: 'It has no armor: shoot it on approach or stun it right at the line.',
+  },
+  firefly: {
+    short: 'Heals enemies in its light. Kill it first.',
+    desc: 'Flies above the path and heals every enemy inside its circle of light. The light of two fireflies does not stack.',
+    tip: 'Shoot it down first. Only spitters and mycelium reach it.',
+  },
+};
+
+export interface FoeText extends FoeNotes { name: string }
+/** Карточка врага на текущем языке; null у видов без своей карточки (кокон, бабочка, половинка сколопендры). */
+export function foeText(kind: EnemyKind): FoeText | null {
+  const e = bestiaryEntry(kind);
+  if (!e) return null;
+  const en = current === 'en' ? BESTIARY_EN[kind] : undefined;
+  return { name: enemyName(kind), short: en?.short ?? e.short, desc: en?.desc ?? e.desc, tip: en?.tip ?? e.tip };
+}
+
 interface LevelText { name: string; subtitle: string; story: string }
 const LEVELS_EN: Record<string, LevelText> = {
   tutorial: {
@@ -449,7 +706,7 @@ const LEVELS_EN: Record<string, LevelText> = {
   },
   endless: {
     name: 'Endless Siege', subtitle: 'A spiral path to the anthill, waves without end',
-    story: 'A new anthill stands right in the middle of a big glade, and a single path leads to it, coiling around it twice. The waves never end, each tougher than the last, and every tenth is led by a boss. Towers between the coils hit two of them at once. The map is bigger than the screen: drag it with a finger or the mouse, pinch or scroll to zoom. How many waves can you hold?',
+    story: 'A new anthill stands right in the middle of a big glade, and a single path leads to it, coiling around it twice. The waves never end, each tougher than the last, and every tenth is led by a boss. For every tenth wave you repel, the queen offers a gift: one boost out of three. Towers between the coils hit two of them at once. The map is bigger than the screen: drag it with a finger or the mouse, pinch or scroll to zoom. How many waves can you hold?',
   },
   'oak-edge': {
     name: 'Edge of the Old Oak', subtitle: 'First siege: one path, 12 waves',

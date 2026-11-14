@@ -12,6 +12,7 @@ import { Effects } from './effects';
 import { WaveManager } from './waves';
 import { Construction } from './construction';
 import { NO_PERKS, type Perks } from './perks';
+import { boonDef, type BoonId } from './boons';
 import { PAL } from '../render/palette';
 import { t as tr, towerText } from './i18n';
 
@@ -62,6 +63,10 @@ export class World implements GameCtx {
    * волны: позвать волну мало, её надо пережить. Медленный босс прошлой волны счёт не держит.
    */
   clearedWaves = 0;
+  /** Перки игрока. Дары бесконечной осады меняют их на ходу, поэтому у мира своя копия. */
+  readonly perks: Perks;
+  /** Дары бесконечной осады: сколько раз взят каждый. */
+  readonly boons: Partial<Record<BoonId, number>> = {};
   /** Game подсвечивает экран красным, когда враг дошёл до личинок. */
   onLivesLost: ((n: number) => void) | null = null;
   /** Game озвучивает события ядра; симуляция оставляет null. */
@@ -69,19 +74,21 @@ export class World implements GameCtx {
   private heroWasDead = false;
 
   constructor(
-    readonly level: LevelDef, readonly perks: Perks = NO_PERKS,
+    readonly level: LevelDef, perks: Perks = NO_PERKS,
     readonly difficulty: DifficultyDef = DIFFICULTIES[1], effects: Effects = new Effects(),
   ) {
     this.effects = effects;
+    this.perks = { ...perks };
     const size = levelSize(level);
     this.width = size.w;
     this.height = size.h;
     this.paths = level.paths.map((w) => new Path(snapWaypoints(w, CELL)));
+    for (const p of this.paths) p.siblings = this.paths.filter((o) => o !== p);
     this.plots = World.makeGrid(level, this.paths);
     this.gold = Math.round(level.startGold * difficulty.goldMul) + perks.startGold;
     this.lives = this.startLives;
     this.hero = new Hero(Math.min(HERO.levels.length, HERO.baseLevel + perks.heroLevelBonus), size);
-    this.spells = new SpellBook(perks);
+    this.spells = new SpellBook(this.perks);
     this.waves = new WaveManager(level.waveGen ?? level.waves, { delay: level.waveDelay, hpMul: level.hpMul });
   }
 
@@ -231,6 +238,13 @@ export class World implements GameCtx {
     const e = new Enemy(kind, hpMul, path, progress);
     this.enemies.push(e);
     return e;
+  }
+
+  /** Взять дар бесконечной осады: действует до конца забега, повторный складывается. */
+  takeBoon(id: BoonId): void {
+    this.perks.rev++;
+    boonDef(id).apply(this);
+    this.boons[id] = (this.boons[id] ?? 0) + 1;
   }
 
   /** Перк фуражиров: надбавка к награде за врага. */
