@@ -32,7 +32,24 @@ const TIERS: readonly Tier[] = [
   { kind: 'slug', from: 11, weight: 0.8, interval: 3.5 },
   { kind: 'dragonfly', from: 12, weight: 1, interval: 1.5 },
   { kind: 'leech', from: 14, weight: 0.8, interval: 3.0 },
+  // Гости из дальних земель: с GUESTS_FROM каждые три волны приходят два врага очередного
+  // ландшафта, в порядке актов кампании. Промежутки те же, что у них в кампании.
+  { kind: 'scorpion', from: 16, weight: 1.5, interval: 1.0 },
+  { kind: 'scarab', from: 16, weight: 1.2, interval: 1.9 },
+  { kind: 'woodlouse', from: 19, weight: 1.4, interval: 1.2 },
+  { kind: 'grasshopper', from: 19, weight: 1.3, interval: 0.9 },
+  { kind: 'centipede', from: 22, weight: 1.3, interval: 2.2 },
+  { kind: 'armyAnt', from: 22, weight: 0.8, interval: 0.3 },
+  { kind: 'iceBug', from: 25, weight: 1.2, interval: 2.0 },
+  { kind: 'iceSnail', from: 25, weight: 0.9, interval: 3.0 },
+  { kind: 'silkworm', from: 28, weight: 1.3, interval: 1.6 },
+  { kind: 'tick', from: 28, weight: 1.2, interval: 0.9 },
+  { kind: 'mantis', from: 31, weight: 1.2, interval: 1.5 },
+  { kind: 'firefly', from: 31, weight: 1.3, interval: 2.2 },
 ];
+
+/** С этой волны приходят враги актов; в волне своего появления гость выходит наверняка. */
+const GUESTS_FROM = 16;
 
 /** Боссы каждой десятой волны по кругу; на каждом следующем круге их на одного больше. */
 const BOSSES: readonly EnemyKind[] = ['rhino', 'queen', 'empress'];
@@ -95,6 +112,7 @@ const round2 = (v: number): number => Math.round(v * 100) / 100;
 /**
  * n-я волна (с 1). Детерминирована: одно и то же n всегда даёт ту же волну, поэтому рекорды честные.
  * Каждая пятая волна воздушная, каждая седьмая бронированная, каждая десятая с боссом.
+ * Волны до GUESTS_FROM от списка гостей не зависят: начало осады остаётся прежним.
  */
 export function endlessWave(n: number): WaveDef {
   if (n <= 1) return { groups: [{ kind: 'termite', count: 8, interval: 1.0, delay: 0 }] };
@@ -116,20 +134,35 @@ export function endlessWave(n: number): WaveDef {
   const air = n % 5 === 0;
   const armor = n % 7 === 0;
   const unlocked = TIERS.filter((t) => n >= t.from);
-  const weights = unlocked.map((t) => {
+  const healer = (t: Tier): boolean => !!ENEMIES[t.kind].mend;
+  const weightOf = (t: Tier): number => {
     let w = t.weight;
     // Новичок волны: только что открытый враг выходит чаще, чтобы его успели разглядеть.
     if (n - t.from < 3) w *= 1.8;
-    if (air && ENEMIES[t.kind].flying) w *= 3;
+    // Лекарь в воздушной волне выходит с обычным весом: он поддержка, а не ударная сила.
+    if (air && ENEMIES[t.kind].flying && !healer(t)) w *= 3;
     if (armor && ENEMIES[t.kind].armor >= 0.3) w *= 3;
     return w;
-  });
+  };
+  const weights = unlocked.map(weightOf);
+  // Лекари не ходят двумя группами: стая летунов, которую лечили полтора десятка светлячков,
+  // проходила насквозь на любой сложности. Второй раз жребий тянут без лекарей.
+  const plain = unlocked.filter((t) => !healer(t));
+  const plainWeights = plain.map(weightOf);
+  let healers = 0;
   const nGroups = Math.min(5, 2 + Math.floor((n - 1) / 6));
   const shares: number[] = [];
   for (let i = 0; i < nGroups; i++) shares.push(rng.range(0.7, 1.3));
   const sum = shares.reduce((a, s) => a + s, 0);
+  // Гость, который открылся именно на этой волне, занимает первую группу: иначе при двух десятках
+  // видов он мог бы не выйти ни разу за свои «волны новичка».
+  const debut = n >= GUESTS_FROM ? unlocked.filter((t) => t.from === n) : [];
   for (let i = 0; i < nGroups; i++) {
-    const tier = pickWeighted(rng, unlocked, weights);
+    // Жребий тянем всегда, чтобы порядок случайных чисел не зависел от дебюта.
+    let picked = pickWeighted(rng, unlocked, weights);
+    if (healer(picked) && healers > 0) picked = pickWeighted(rng, plain, plainWeights);
+    const tier = debut[i] ?? picked;
+    if (healer(tier)) healers++;
     const count = Math.max(1, Math.min(36, Math.round((b * shares[i]) / sum / threat(tier.kind))));
     const interval = Math.max(0.3, tier.interval * Math.max(0.55, 1 - n * 0.01));
     groups.push({ kind: tier.kind, count, interval: round2(interval), delay: round1(delay) });

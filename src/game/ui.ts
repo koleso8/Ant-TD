@@ -3,10 +3,10 @@ import { CELL, DIFFICULTIES, ENEMIES, LOGICAL_H, LOGICAL_W, SPELLS, TOWERS, TOWE
 import { TUTORIAL, levelSize, type LevelDef } from './levels';
 import { ACTS, LEVELS, LEVEL_ACT, THEMES } from './campaign';
 import { ENDLESS } from './endless';
-import { PERKS } from './perks';
+import { roomCost, roomDef, roomLevel, roomMax, type RoomId } from './chambers';
 import { BESTIARY, bestiaryEntry, foeStats, homeAct } from './bestiary';
 import { BOONS, boonDef, type BoonGroup, type BoonId } from './boons';
-import { freeStars, totalStars } from './progress';
+import { DAILY_GIFTS, msToMidnight } from './grain';
 import {
   actFinale, actTitle, boonText, difficultyText, enemyName, foeText, gameTitle, getLang, LANGS, levelText, perkText, spellText, t, targetText, towerText, type FoeText,
 } from './i18n';
@@ -15,6 +15,7 @@ import type { Game } from './game';
 import { canInstall, fullscreenSupported, isInstalledApp, manualInstall, promptInstall } from '../engine/device';
 import type { Tower } from './tower';
 import { PAL } from '../render/palette';
+import { grainCup, grainHeap, grainIcon } from '../render/colonyKit';
 import { drawText, measure, wrapText } from '../render/text';
 import {
   ANT_SOLDIER, circle, drawAcidGlob, drawAnt, drawFlagIcon, drawHero, drawHoney, drawLarva, drawShadow, drawSporeCloud, drawStar, drawTowerIcon, ell, outline,
@@ -297,10 +298,10 @@ export class UI {
         break;
       case 'title': this.drawTitle(ctx); break;
       case 'levels': this.drawLevels(ctx); break;
-      case 'perks': this.drawPerks(ctx); break;
       case 'intro': this.drawIntro(ctx); break;
       case 'settings': this.drawSettings(ctx); break;
       case 'bestiary': this.drawBestiary(ctx); break;
+      case 'colony': this.drawColony(ctx); break;
       default: this.drawEnd(ctx); break;
     }
     if (g.installHelp && (g.state === 'title' || g.state === 'settings')) this.drawInstallHelp(ctx);
@@ -1106,6 +1107,9 @@ export class UI {
     drawText(ctx, gameTitle(), 640, 30, { size: 28, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
     this.bigButton(ctx, 1170, 30, 180, 38, t('levels.settings'), () => g.toSettings(), 'rgba(90,60,30,0.9)', 16);
     this.bigButton(ctx, 980, 30, 180, 38, t('levels.bestiary'), () => g.toBestiary(), 'rgba(90,60,30,0.9)', 16);
+    // Счётчик зерна: тап открывает календарь дара дня.
+    const chip = this.grainChip(ctx, 14, 30, String(g.progress.grain), 'left', 38, g.daily.ready);
+    this.reg(this.overlayButtons, { ...chip, onTap: () => g.openDaily() });
     // Вкладки актов.
     const tabX = 14;
     const tabW = 186;
@@ -1142,67 +1146,14 @@ export class UI {
       label: t('levels.challenge'), status: best ? t('levels.record', best.wave) : g.endlessUnlocked ? t('levels.noRecord') : t('levels.lockedTutorial'),
       unlocked: g.endlessUnlocked, onTap: () => g.chooseEndless(),
     });
-    const free = freeStars(g.progress);
-    this.bigButton(ctx, 690, 684, 330, 42, t('levels.perks', free), () => g.toPerks(), free > 0 ? '#3c8a2b' : 'rgba(90,60,30,0.9)', 18);
+    // Муравейник: зелёный, когда какую-то камеру уже можно отстроить.
+    const can = g.roomsAffordable;
+    this.bigButton(ctx, 690, 684, 360, 42, can > 0 ? t('levels.colonyCan', can) : t('levels.colony'), () => g.toColony(), can > 0 ? '#3c8a2b' : 'rgba(90,60,30,0.9)', 18);
     drawText(ctx, t('levels.difficulty', difficultyText(g.difficulty.id).name.toLowerCase()), 16, 684, { size: 12, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.75)' });
     const resetLabel = g.resetArmed ? t('levels.resetConfirm') : t('levels.reset');
     drawText(ctx, resetLabel, 1050, 684, { size: 14, align: 'center', weight: 'normal', stroke: null, color: g.resetArmed ? PAL.uiRed : 'rgba(246,230,200,0.55)' });
     this.reg(this.overlayButtons, { x: 930, y: 666, w: 240, h: 36, onTap: () => g.resetProgressTap() });
-  }
-
-  /** Перки за звёзды: восемь улучшений в два столбца. */
-  private drawPerks(ctx: CanvasRenderingContext2D): void {
-    const g = this.g;
-    this.dim(ctx);
-    const free = freeStars(g.progress);
-    const total = totalStars(g.progress);
-    drawText(ctx, t('perks.title'), 640, 46, { size: 34, align: 'center', color: PAL.uiGold, strokeWidth: 6 });
-    drawText(ctx, t('perks.free', free, total), 640, 84, {
-      size: 16, align: 'center', weight: 'normal', stroke: null,
-    });
-    const colW = 560;
-    const rowH = 100;
-    PERKS.forEach((p, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const x = 80 + col * (colW + 40);
-      const y = 112 + row * (rowH + 10);
-      const rank = g.progress.perks[p.id] ?? 0;
-      const maxed = rank >= p.maxRank;
-      const can = !maxed && free >= p.cost;
-      this.panel(ctx, x, y, colW, rowH, 16);
-      const px = perkText(p.id);
-      drawText(ctx, px.name, x + 18, y + 24, { size: 19, color: PAL.uiGold });
-      drawText(ctx, px.desc(Math.max(1, rank)), x + 18, y + 50, { size: 14, weight: 'normal', stroke: null });
-      if (!maxed) {
-        drawText(ctx, t('perks.next', px.desc(rank + 1)), x + 18, y + 72, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.65)' });
-      } else {
-        drawText(ctx, t('perks.maxRank'), x + 18, y + 72, { size: 13, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.65)' });
-      }
-      for (let r = 0; r < p.maxRank; r++) {
-        circle(ctx, x + colW - 150 + r * 20, y + 26, 7);
-        ctx.fillStyle = r < rank ? PAL.honey : 'rgba(0,0,0,0.4)';
-        ctx.fill();
-        ctx.strokeStyle = PAL.outline;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-      const bx = x + colW - 124;
-      const by = y + 44;
-      roundRect(ctx, bx, by, 108, 42, 12);
-      ctx.fillStyle = can ? '#3c8a2b' : 'rgba(60,40,25,0.9)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      drawText(ctx, maxed ? t('perks.max') : t('perks.buy', p.cost), bx + 54, by + 21, { size: 16, align: 'center', color: can || maxed ? PAL.uiLight : 'rgba(246,230,200,0.5)' });
-      if (can) this.reg(this.overlayButtons, { x: bx, y: by, w: 108, h: 42, onTap: () => g.buyPerk(p.id) });
-    });
-    this.bigButton(ctx, 540, 600, 220, 56, t('perks.back'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
-    this.bigButton(ctx, 790, 600, 260, 56, t('perks.refund'), () => g.refundPerks(), 'rgba(90,60,30,0.9)', 20);
-    drawText(ctx, t('perks.refundHint'), 640, 656, {
-      size: 14, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.6)',
-    });
+    if (g.dailyOpen) this.drawDaily(ctx);
   }
 
   private drawIntro(ctx: CanvasRenderingContext2D): void {
@@ -1274,14 +1225,17 @@ export class UI {
     const mode = g.mode;
     this.dim(ctx);
     this.panel(ctx, 320, 150, 640, 420, 26);
+    // Зерно за бой: плашка над кнопками.
+    if (g.grainGained > 0) this.grainChip(ctx, 640, 440, t('grain.plus', g.grainGained), 'center', 40);
     const diff = t('end.difficulty', difficultyText(g.difficulty.id).name.toLowerCase());
     const body = (text: string, y: number): void => {
       wrapText(ctx, text, 560, 19).forEach((l, i) => drawText(ctx, l, 640, y + i * 26, { size: 19, align: 'center', weight: 'normal', stroke: null }));
     };
     if (mode === 'tutorial' && won) {
-      drawText(ctx, t('end.tutorialWon'), 640, 210, { size: 40, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
-      this.drawCheck(ctx, 640, 272, 24);
-      body(t('end.tutorialText'), 326);
+      // Текст длинный, под ним плашка зерна: всё чуть выше, чем у обычной победы.
+      drawText(ctx, t('end.tutorialWon'), 640, 200, { size: 40, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
+      this.drawCheck(ctx, 640, 250, 20);
+      body(t('end.tutorialText'), 292);
       this.bigButton(ctx, 520, 500, 220, 64, t('end.back'), () => g.toLevels(), 'rgba(90,60,30,0.9)', 22);
       this.bigButton(ctx, 770, 500, 220, 64, t('end.march'), () => g.chooseLevel(0));
       return;
@@ -2148,6 +2102,92 @@ export class UI {
   }
 
   /**
+   * Карточка выбранной камеры внизу экрана: уровень, что камера даёт сейчас и что даст следующий
+   * уровень, кнопка отстройки с ценой в зерне. Под завалом первый уровень — расчистка.
+   */
+  private drawRoomCard(ctx: CanvasRenderingContext2D, id: RoomId): void {
+    const g = this.g;
+    const r = roomDef(id);
+    const lv = roomLevel(g.progress.perks, r);
+    const max = roomMax(r);
+    const cost = roomCost(r, lv);
+    const px = perkText(r.perk);
+    const name = t(`colony.${id}`);
+    const under = !!r.rubble && lv === 0;
+    const o = this.hud();
+    const w = 620;
+    // «Едкая кислота: урон стрелков +10%» — после двоеточия со строчной.
+    const lc = (v: string): string => v.charAt(0).toLocaleLowerCase(getLang()) + v.slice(1);
+    const now = lv > 0 ? `${px.name}: ${lc(px.desc(lv))}` : under ? t('room.buried', name) : t('room.empty');
+    const next = cost === null ? t('room.maxed') : t('room.next', lv > 0 ? lc(px.desc(lv + 1)) : `${px.name}: ${lc(px.desc(1))}`);
+    const nowL = wrapText(ctx, now, w - 48, 16, 'normal').slice(0, 2);
+    const nextL = wrapText(ctx, next, w - 48, 14, 'normal').slice(0, 2);
+    // Высота по числу строк: на узком экране описание переносится, кнопка уходит ниже.
+    const nextY = 62 + nowL.length * 21 + 4;
+    const btnY = nextY + nextL.length * 19 + 4;
+    const h = (cost !== null ? btnY + 46 : nextY + nextL.length * 19 - 6) + 12;
+    const x = 640 - w / 2;
+    const y = o.b + 720 - 12 - h;
+    this.panel(ctx, x, y, w, h, 20, 'rgba(43,22,8,0.95)');
+    drawText(ctx, under ? t('colony.rubble') : name, x + 24, y + 30, { size: 24, color: PAL.uiGold });
+    drawText(ctx, t('room.level', lv, max), x + w - 24, y + 30, { size: 15, align: 'right', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.8)' });
+    nowL.forEach((l, i) => drawText(ctx, l, x + 24, y + 62 + i * 21, { size: 16, weight: 'normal', stroke: null, color: PAL.uiLight }));
+    nextL.forEach((l, i) => drawText(ctx, l, x + 24, y + nextY + i * 19, { size: 14, weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.7)' }));
+    if (cost !== null) {
+      // Кнопка: «Отстроить» и цена со значком зерна; не хватает — сколько ещё нужно.
+      const can = cost <= g.progress.grain;
+      const label = can ? t(under ? 'room.clear' : 'room.build') : t('room.need', cost - g.progress.grain);
+      const num = can ? String(cost) : '';
+      const bw = 300;
+      const bh = 46;
+      const bx = 640 - bw / 2;
+      const by = y + btnY;
+      roundRect(ctx, bx, by, bw, bh, 16);
+      ctx.fillStyle = can ? '#3c8a2b' : 'rgba(70,46,26,0.95)';
+      ctx.fill();
+      ctx.strokeStyle = can ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      const tw = measure(ctx, label, 20, 'bold') + 12 + 26 + (num ? measure(ctx, num, 20, 'bold') + 4 : 0);
+      let cx = 640 - tw / 2;
+      drawText(ctx, label, cx, by + bh / 2 + 1, { size: 20, color: can ? PAL.uiLight : 'rgba(246,230,200,0.75)' });
+      cx += measure(ctx, label, 20, 'bold') + 12;
+      grainIcon(ctx, cx + 12, by + bh / 2 + 1, 13);
+      cx += 26;
+      if (num) drawText(ctx, num, cx + 4, by + bh / 2 + 1, { size: 20, color: PAL.uiGold });
+      if (can) this.reg(this.overlayButtons, { x: bx, y: by, w: bw, h: bh, onTap: () => g.buildRoom(id) });
+    }
+    // Тап по карточке мимо кнопки ничего не выбирает в разрезе под ней.
+    this.reg(this.overlayButtons, { x, y, w, h, onTap: () => undefined });
+  }
+
+  /** Муравейник в разрезе: заголовок, зерно в кладовой, кнопка «Назад» и карточка выбранной камеры. */
+  private drawColony(ctx: CanvasRenderingContext2D): void {
+    const g = this.g;
+    const o = this.hud();
+    this.group(ctx, o.l, o.t);
+    const pw = Math.max(330, measure(ctx, t('colony.sub'), 13, 'normal') + 34);
+    this.panel(ctx, 14, 12, pw, 64);
+    drawText(ctx, t('colony.title'), 30, 34, { size: 24, color: PAL.uiGold });
+    drawText(ctx, t('colony.sub'), 30, 58, { size: 13, weight: 'normal', stroke: null, color: PAL.uiLight });
+    this.ungroup(ctx);
+    this.group(ctx, o.r, o.t);
+    this.bigButton(ctx, 1188, 44, 150, 54, t('bestiary.back'), () => g.closeColony(), '#7a4a22', 22);
+    this.grainChip(ctx, 1098, 44, String(g.progress.grain), 'right', 44);
+    this.ungroup(ctx);
+    if (g.colonyPick) this.drawRoomCard(ctx, g.colonyPick);
+    if (g.colonyHint > 0) {
+      const text = t('endless.hint');
+      const w = measure(ctx, text, 15, 'normal') + 36;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, g.colonyHint);
+      this.panel(ctx, 640 - w / 2, o.b + 650, w, 36, 14);
+      drawText(ctx, text, 640, o.b + 668, { size: 15, align: 'center', weight: 'normal', stroke: null });
+      ctx.restore();
+    }
+  }
+
+  /**
    * Меню «Враги»: слева сетка всех врагов кампании, справа карточка выбранного. Карточка
    * открывается, когда враг впервые выходит на тропу; до того в сетке стоит его силуэт.
    */
@@ -2181,6 +2221,125 @@ export class UI {
       drawText(ctx, t('bestiary.where', act), px + pw / 2, gy + 410, { size: 16, align: 'center', color: PAL.uiLight, strokeWidth: 3 });
     }
     this.bigButton(ctx, 640, 684, 240, 48, t('bestiary.back'), () => g.closeBestiary(), 'rgba(90,60,30,0.9)', 20);
+  }
+
+  // ───────────── зерно и дар дня ─────────────
+
+  /**
+   * Плашка с зерном: значок и число. align — к какому краю привязан x. Сразу после прибытия
+   * зерна плашка подпрыгивает. Возвращает занятую область, чтобы на неё повесить тап.
+   */
+  private grainChip(ctx: CanvasRenderingContext2D, x: number, cy: number, text: string, align: 'left' | 'center' | 'right', h = 38, alert = false): { x: number; y: number; w: number; h: number } {
+    const g = this.g;
+    const size = Math.round(h * 0.47);
+    const w = Math.round(measure(ctx, text, size, 'bold') + h + 18);
+    const x0 = align === 'left' ? x : align === 'right' ? x - w : x - w / 2;
+    const age = g.clock - g.grainPulse;
+    const k = age >= 0 && age < 0.5 ? 1 + Math.sin((age / 0.5) * Math.PI) * 0.12 : 1;
+    ctx.save();
+    ctx.translate(x0 + w / 2, cy);
+    ctx.scale(k, k);
+    ctx.translate(-(x0 + w / 2), -cy);
+    roundRect(ctx, x0, cy - h / 2, w, h, h / 2);
+    ctx.fillStyle = 'rgba(43,22,8,0.92)';
+    ctx.fill();
+    ctx.strokeStyle = PAL.uiBorder;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    grainIcon(ctx, x0 + h * 0.55, cy + 1, h * 0.36);
+    drawText(ctx, text, x0 + h + 4, cy + 1, { size, color: PAL.uiGold, strokeWidth: 4 });
+    if (alert) {
+      // Дар дня ждёт: красная точка с восклицанием, дышит.
+      const r = 9 + Math.sin(g.clock * 5) * 1.2;
+      circle(ctx, x0 + w - 4, cy - h / 2 + 3, r);
+      ctx.fillStyle = PAL.uiRed;
+      ctx.fill();
+      ctx.strokeStyle = PAL.outline;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      drawText(ctx, '!', x0 + w - 4, cy - h / 2 + 3.5, { size: 14, align: 'center', stroke: null, color: PAL.uiLight });
+    }
+    ctx.restore();
+    return { x: x0, y: cy - h / 2, w, h };
+  }
+
+  /** Кучка зерна на плитке календаря: к седьмому дню плошка с горкой. */
+  private dailyLoot(ctx: CanvasRenderingContext2D, day: number, x: number, y: number): void {
+    if (day >= DAILY_GIFTS.length) {
+      grainCup(ctx, x, y + 10, 1.45);
+      return;
+    }
+    grainHeap(ctx, x, y + 4, [3, 4, 6, 7, 9, 12][day - 1] ?? 3, 7.8, day * 13);
+  }
+
+  /**
+   * Дар дня поверх экрана кампании: семь плиток календаря. Взятые дни с галочкой, сегодняшний
+   * подсвечен, седьмой — большая плошка. Пропуск дня возвращает серию к первому.
+   */
+  private drawDaily(ctx: CanvasRenderingContext2D): void {
+    const g = this.g;
+    const s = g.daily;
+    this.overlayButtons = [];
+    this.dim(ctx, 0.6);
+    const w = 820;
+    const h = 440;
+    const x = 640 - w / 2;
+    const y = 130;
+    this.panel(ctx, x, y, w, h, 26, 'rgba(43,22,8,0.97)');
+    drawText(ctx, t('daily.title'), 640, y + 42, { size: 36, align: 'center', color: PAL.uiGold, strokeWidth: 7 });
+    const sub = s.reset ? t('daily.reset') : t('daily.sub');
+    wrapText(ctx, sub, 700, 16, 'normal').slice(0, 2).forEach((l, i) => drawText(ctx, l, 640, y + 82 + i * 22, {
+      size: 16, align: 'center', weight: 'normal', stroke: null, color: PAL.uiLight,
+    }));
+    const n = DAILY_GIFTS.length;
+    const tw = 98;
+    const th = 160;
+    const gap = 10;
+    const x0 = 640 - (n * tw + (n - 1) * gap) / 2;
+    const ty = y + 132;
+    for (let i = 0; i < n; i++) {
+      const day = i + 1;
+      const tx = x0 + i * (tw + gap);
+      const taken = day < s.day || (!s.ready && day === s.day);
+      const today = s.ready && day === s.day;
+      const big = day === n;
+      if (today) {
+        // Сегодняшняя плитка светится и чуть дышит.
+        ctx.save();
+        ctx.shadowColor = 'rgba(255,214,90,0.9)';
+        ctx.shadowBlur = 18 + Math.sin(g.clock * 4) * 6;
+        roundRect(ctx, tx, ty, tw, th, 16);
+        ctx.fillStyle = '#4f7d26';
+        ctx.fill();
+        ctx.restore();
+      }
+      roundRect(ctx, tx, ty, tw, th, 16);
+      ctx.fillStyle = today ? '#4f7d26' : big ? '#5c3a14' : '#3c2410';
+      ctx.fill();
+      ctx.strokeStyle = today ? '#ffe08a' : big ? PAL.uiGold : PAL.uiBorder;
+      ctx.lineWidth = today || big ? 3 : 2;
+      ctx.stroke();
+      drawText(ctx, t('daily.day', day), tx + tw / 2, ty + 20, { size: 15, align: 'center', color: today ? PAL.uiLight : 'rgba(246,230,200,0.85)', strokeWidth: 3 });
+      ctx.save();
+      if (taken) ctx.globalAlpha = 0.45;
+      this.dailyLoot(ctx, day, tx + tw / 2, ty + 100);
+      ctx.restore();
+      drawText(ctx, `+${DAILY_GIFTS[i]}`, tx + tw / 2, ty + th - 22, { size: big ? 22 : 19, align: 'center', color: PAL.uiGold, strokeWidth: 4, alpha: taken ? 0.6 : 1 });
+      if (taken) this.drawCheck(ctx, tx + tw / 2, ty + 86, 17);
+    }
+    const by = y + h - 50;
+    if (s.ready) {
+      this.bigButton(ctx, 640, by, 300, 58, t('daily.claim', DAILY_GIFTS[s.day - 1]), () => g.claimDaily(), '#3c8a2b', 24);
+    } else {
+      const ms = msToMidnight();
+      const hh = Math.floor(ms / 3_600_000);
+      const mm = Math.floor((ms % 3_600_000) / 60_000);
+      drawText(ctx, t('daily.next', hh, mm), 640, by - 44, { size: 16, align: 'center', weight: 'normal', stroke: null, color: 'rgba(246,230,200,0.8)' });
+      this.bigButton(ctx, 640, by + 4, 220, 50, t('daily.close'), () => g.closeDaily(), 'rgba(90,60,30,0.9)', 20);
+    }
+    // Тап мимо окна закрывает его; дар никуда не денется, на счётчике останется точка.
+    this.reg(this.overlayButtons, { x, y, w, h, onTap: () => undefined });
+    this.reg(this.overlayButtons, { ...this.viewRect(), onTap: () => g.closeDaily() });
   }
 
   private drawPause(ctx: CanvasRenderingContext2D): void {

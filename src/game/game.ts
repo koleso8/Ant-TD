@@ -9,8 +9,9 @@ import { dist, roundRect, type Vec } from '../engine/math';
 import { CELL, DIFFICULTIES, ENEMIES, LOGICAL_H, LOGICAL_W, SPELLS, TARGET_MODES, TOWERS, type DifficultyDef, type DifficultyId, type EnemyKind, type TargetModeDef, type TowerKind } from './config';
 import { TUTORIAL, levelSize, type LevelDef } from './levels';
 import { ACTS, LEVELS, LEVEL_ACT } from './campaign';
-import { defaultProgress, difficultyRank, freeStars, loadProgress, saveProgress, totalStars, type EndlessRecord, type Progress } from './progress';
-import { PERKS, perksFromRanks, type Perks } from './perks';
+import { defaultProgress, difficultyRank, loadProgress, saveProgress, totalStars, type EndlessRecord, type Progress } from './progress';
+import { perksFromRanks, type Perks } from './perks';
+import { ROOMS, affordableRooms, roomCost, roomDef, roomLevel, roomMax, type RoomId } from './chambers';
 import { World } from './world';
 import type { Plot } from './types';
 import type { Tower } from './tower';
@@ -24,15 +25,17 @@ import { Enemy } from './enemy';
 import { Path } from './path';
 import { BESTIARY, bestiaryEntry } from './bestiary';
 import { BOON_EVERY, pickBoons, type BoonId } from './boons';
+import { DAILY_GIFTS, GRAIN_TUTORIAL, dailyStatus, dateKey, endlessGrain, lossGrain, winGrain, type DailyStatus } from './grain';
 import type { Builder, Construction } from './construction';
 import { installSprites } from '../render/sprites';
 import { drawSplash, drawSplashSign } from '../render/splash';
+import { WORLD_H, WORLD_W, bakeColony, drawColonyLife, roomAt, type RoomLevels } from '../render/colony';
 import { boonText, detectLang, gameTitle, getLang, setLang, t, targetText, type Lang } from './i18n';
 import { audio } from '../engine/audio';
 import { enterFullscreen, exitFullscreen, isInstalledApp, isTouchDevice } from '../engine/device';
 import splashUrl from '../assets/sprites/splash.webp';
 
-export type GameState = 'title' | 'levels' | 'perks' | 'intro' | 'settings' | 'bestiary' | 'playing' | 'won' | 'lost';
+export type GameState = 'title' | 'levels' | 'intro' | 'settings' | 'bestiary' | 'colony' | 'playing' | 'won' | 'lost';
 /** Кампания из шести уровней, обучение на плацу или бесконечная осада на большой карте. */
 export type GameMode = 'campaign' | 'tutorial' | 'endless';
 
@@ -51,6 +54,9 @@ export type Selection =
 interface Ambient { cx: number; cy: number; rx: number; ry: number; speed: number; phase: number }
 
 /** Одна и та же видимая область: иначе фон и заставку надо перепечь. */
+/** Сколько пикселей можно отдать под печёный разрез муравейника (телефоны не тянут холсты больше ~16 млн). */
+const COLONY_BUDGET = 10_000_000;
+
 function sameView(a: ViewRect, b: ViewRect): boolean {
   return a.x0 === b.x0 && a.y0 === b.y0 && a.x1 === b.x1 && a.y1 === b.y1;
 }
@@ -135,6 +141,29 @@ export class Game {
   private bg: { canvas: HTMLCanvasElement; k: number; view: ViewRect } | null = null;
   /** Заставка главного меню, печётся один раз; перепекается, когда догрузится картина. */
   private splash: { canvas: HTMLCanvasElement; k: number; view: ViewRect; ready: boolean } | null = null;
+  /** Разрез муравейника печётся под видимую область, как фон уровня. */
+  /** sig — уровни камер, с которыми испечён разрез: отстроили камеру — печём заново. */
+  private colonyBg: { canvas: HTMLCanvasElement; k: number; sig: string } | null = null;
+  /** Своя камера муравейника: он больше экрана, его тянут и масштабируют. */
+  private colonyCam = new Camera();
+  /** Сколько ещё показывать подсказку про перетаскивание. */
+  colonyHint = 0;
+  /** Откуда открыли муравейник: туда и вернёмся. */
+  colonyFrom: GameState = 'levels';
+  /** Выбранная камера муравейника: по ней открыта карточка отстройки. */
+  colonyPick: RoomId | null = null;
+  /** Только что отстроенная камера: вспышка света в разрезе. */
+  private colonyBuilt: { id: RoomId; at: number } | null = null;
+  /** Зерно за последний бой: строка на экране итогов. */
+  grainGained = 0;
+  /** Сколько зерна за волны нынешнего забега бесконечной осады уже в кладовой. */
+  private endlessPaid = 0;
+  /** Окно дара дня поверх экрана кампании. */
+  dailyOpen = false;
+  /** За какую дату окно дара уже всплывало само: второй раз за день не навязываем. */
+  private dailyAutoFor: string | null = null;
+  /** Когда прибыло зерно: счётчик на экране кампании подпрыгивает. */
+  grainPulse = -10;
   /** Образцы врагов для отрисовки на подходе: по одному на вид, двигаются только при рисовании. */
   private readonly ghosts = new Map<EnemyKind, Enemy>();
   private readonly splashImg = new Image();
@@ -297,6 +326,8 @@ export class Game {
     this.boonOffer = null;
     this.boonsGiven = 0;
     this.boonPeek = null;
+    this.grainGained = 0;
+    this.endlessPaid = 0;
     this.foeCard = null;
     this.foeToast = null;
     this.foeQueue = [];
@@ -371,10 +402,7 @@ export class Game {
     this.state = 'levels';
     this.paused = false;
     this.resetArmed = false;
-  }
-
-  toPerks(): void {
-    this.state = 'perks';
+    this.offerDaily();
   }
 
   toSettings(): void {
@@ -500,6 +528,82 @@ export class Game {
     if (this.state === 'bestiary') this.state = this.bestiaryFrom;
   }
 
+  // ───────────── зерно и дар дня ─────────────
+
+  /** Дар дня: взят ли сегодня и какой день календаря на очереди. */
+  get daily(): DailyStatus {
+    return dailyStatus(this.progress.daily);
+  }
+
+  /** Зерно в кладовую; сохраняет вызывающий. */
+  private addGrain(n: number): void {
+    if (n <= 0) return;
+    this.progress.grain += n;
+    this.grainPulse = this.clock;
+  }
+
+  /** Окно дара всплывает само раз в день, когда дар готов; новичку сперва обучение. */
+  private offerDaily(): void {
+    if (!this.progress.tutorialDone && totalStars(this.progress) === 0) return;
+    const key = dateKey(new Date());
+    if (this.dailyAutoFor === key || !this.daily.ready) return;
+    this.dailyAutoFor = key;
+    this.dailyOpen = true;
+  }
+
+  /** Тап по счётчику зерна: календарь дара, даже если сегодняшний уже взят. */
+  openDaily(): void {
+    if (this.state === 'levels') this.dailyOpen = true;
+  }
+
+  closeDaily(): void {
+    this.dailyOpen = false;
+  }
+
+  /** «Забрать»: зерно дня в кладовую, серия продолжается. */
+  claimDaily(): void {
+    const s = this.daily;
+    if (!s.ready) return;
+    const n = DAILY_GIFTS[s.day - 1];
+    this.progress.daily = { last: dateKey(new Date()), day: s.day };
+    this.addGrain(n);
+    saveProgress(this.progress);
+    this.dailyOpen = false;
+    // Надпись справа от счётчика зерна, чтобы не лезла на строку акта.
+    this.uiFx.text(`+${n}`, 170, 34, PAL.uiGold, 26);
+    audio.play('done');
+  }
+
+  /** Зерно за отбитые волны забега: доплачивает разницу, звать можно сколько угодно раз. */
+  private payEndless(): void {
+    if (this.mode !== 'endless') return;
+    const total = endlessGrain(this.world.clearedWaves, this.difficulty.id);
+    if (total > this.endlessPaid) {
+      this.addGrain(total - this.endlessPaid);
+      this.endlessPaid = total;
+      saveProgress(this.progress);
+    }
+    this.grainGained = this.endlessPaid;
+  }
+
+  /** Муравейник в разрезе: кнопка на экране кампании (в dev ещё клавиша M). */
+  toColony(): void {
+    if (this.state === 'colony') return;
+    this.colonyFrom = this.state;
+    this.state = 'colony';
+    // Сначала вид на купол, верхние камеры и ангар: ширина около 1800 мира.
+    const v = this.screen.view;
+    this.colonyCam.open({ x0: 0, y0: 0, x1: WORLD_W, y1: WORLD_H }, { x: 1330, y: 540 }, (v.x1 - v.x0) / 1800);
+    this.colonyCam.clamp(v);
+    this.colonyHint = 8;
+    this.colonyPick = null;
+    this.colonyBuilt = null;
+  }
+
+  closeColony(): void {
+    if (this.state === 'colony') this.state = this.colonyFrom;
+  }
+
   /** Образец врага для карточки: шагает на месте в точке (x, y), увеличен в k раз, без полосок и значков. */
   drawSpecimen(ctx: CanvasRenderingContext2D, kind: EnemyKind, x: number, y: number, k: number, angle = 0): void {
     let e = this.specimens.get(kind);
@@ -590,24 +694,40 @@ export class Game {
     this.resetArmed = false;
   }
 
-  buyPerk(id: string): boolean {
-    const def = PERKS.find((p) => p.id === id);
-    if (!def) return false;
-    const rank = this.progress.perks[id] ?? 0;
-    if (rank >= def.maxRank || freeStars(this.progress) < def.cost) return false;
-    this.progress.perks[id] = rank + 1;
-    saveProgress(this.progress);
-    return true;
+  // ───────────── камеры муравейника ─────────────
+
+  /** Уровни камер по сохранению: уровень камеры — ранг её перка. */
+  get roomLevels(): RoomLevels {
+    const lv = {} as RoomLevels;
+    for (const r of ROOMS) lv[r.id] = roomLevel(this.progress.perks, r);
+    return lv;
   }
 
-  refundPerks(): void {
-    this.progress.perks = {};
+  /** Сколько камер можно отстроить прямо сейчас. */
+  get roomsAffordable(): number {
+    return affordableRooms(this.progress.perks, this.progress.grain);
+  }
+
+  /** «Отстроить»: зерно в стройку, камера на уровень выше; разрез перепечётся с новым видом. */
+  buildRoom(id: RoomId): void {
+    const r = roomDef(id);
+    const lv = roomLevel(this.progress.perks, r);
+    const cost = roomCost(r, lv);
+    if (cost === null || cost > this.progress.grain) return;
+    this.progress.grain -= cost;
+    this.progress.perks[r.perk] = lv + 1;
     saveProgress(this.progress);
+    this.colonyBuilt = { id, at: this.clock };
+    this.grainPulse = this.clock;
+    audio.play('upgrade');
+    const o = this.ui.hud();
+    this.uiFx.text(t('room.fx', t(`colony.${id}`), lv + 1), 640, o.b + 500, PAL.uiGold, 26);
   }
 
   /** Рекорд бесконечной осады: отбитые волны, при равенстве — повергнутые враги. Можно звать сколько угодно раз за забег. */
   private commitEndless(): void {
     if (this.mode !== 'endless') return;
+    this.payEndless();
     const wave = this.world.clearedWaves;
     const kills = this.world.stats.kills;
     if (wave <= 0) return;
@@ -639,6 +759,9 @@ export class Game {
     if (this.mode === 'tutorial') {
       // Обучение звёзд не даёт: оно открывает кампанию и бесконечную осаду.
       this.earnedStars = 0;
+      // Первое прохождение приносит первое зерно; повтор обучения зерна не даёт.
+      this.grainGained = this.progress.tutorialDone ? 0 : GRAIN_TUTORIAL;
+      this.addGrain(this.grainGained);
       this.progress.tutorialDone = true;
       saveProgress(this.progress);
       return;
@@ -648,7 +771,10 @@ export class Game {
     const id = this.level.id;
     const a = LEVEL_ACT[this.levelIndex] ?? 0;
     const wasDone = this.actDone(a);
-    this.progress.stars[id] = Math.max(this.progress.stars[id] ?? 0, this.earnedStars);
+    const had = this.progress.stars[id] ?? 0;
+    this.grainGained = winGrain(a, this.difficulty.id, Math.max(0, this.earnedStars - had));
+    this.addGrain(this.grainGained);
+    this.progress.stars[id] = Math.max(had, this.earnedStars);
     if (difficultyRank(this.difficulty.id) > difficultyRank(this.progress.beaten[id])) this.progress.beaten[id] = this.difficulty.id;
     saveProgress(this.progress);
     // Эта победа закрыла акт: на экране итогов строка финала и что открылось дальше.
@@ -734,6 +860,15 @@ export class Game {
   }
 
   private handleTap(p: Vec): void {
+    if (this.state === 'colony') {
+      // Кнопки и карточка поверх разреза главнее; мимо них — тап по камере выбирает её.
+      if (this.ui.tapOverlay(p)) { audio.play('click'); return; }
+      const w = this.colonyCam.toWorld(p.x, p.y);
+      this.colonyPick = roomAt(w.x, w.y);
+      this.colonyHint = 0;
+      if (this.colonyPick) audio.play('click');
+      return;
+    }
     if (this.state !== 'playing' || this.paused || this.foeCard || this.boonOffer) {
       if (this.ui.tapOverlay(p)) audio.play('click');
       return;
@@ -758,6 +893,12 @@ export class Game {
 
   /** Перетаскивание двигает большую карту; на обычных уровнях камера стоит. */
   private onDrag(dx: number, dy: number): void {
+    if (this.state === 'colony') {
+      this.colonyCam.pan(dx, dy);
+      this.colonyCam.clamp(this.screen.view);
+      this.colonyHint = 0;
+      return;
+    }
     if (this.state !== 'playing' || !this.camera.free) return;
     this.camera.pan(dx, dy);
     this.camera.clamp(this.screen.view);
@@ -766,6 +907,12 @@ export class Game {
 
   /** Щипок или колесо: масштаб вокруг пальца или курсора. */
   private onZoom(f: number, at: Vec): void {
+    if (this.state === 'colony') {
+      this.colonyCam.zoomAt(f, at.x, at.y, this.screen.view);
+      this.colonyCam.clamp(this.screen.view);
+      this.colonyHint = 0;
+      return;
+    }
     if (this.state !== 'playing' || !this.camera.free) return;
     this.camera.zoomAt(f, at.x, at.y, this.screen.view);
     this.camera.clamp(this.screen.view);
@@ -840,7 +987,7 @@ export class Game {
       }
       return;
     }
-    if (this.state === 'playing' && this.camera.free) {
+    if ((this.state === 'playing' && this.camera.free) || this.state === 'colony') {
       // Стрелки двигают большую карту, плюс и минус меняют масштаб.
       const step = 140;
       const pan: Record<string, readonly [number, number]> = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
@@ -851,12 +998,18 @@ export class Game {
     }
     if (k === 'Escape') {
       if (this.state === 'settings') this.closeSettings();
+      else if (this.state === 'colony') {
+        if (this.colonyPick) this.colonyPick = null;
+        else this.closeColony();
+      }
+      else if (this.state === 'levels' && this.dailyOpen) this.closeDaily();
       else if (this.state === 'playing') { this.selected = null; this.pendingSpec = null; this.armedSpell = null; }
-      else if (this.state === 'intro' || this.state === 'won' || this.state === 'lost' || this.state === 'perks') this.toLevels();
+      else if (this.state === 'intro' || this.state === 'won' || this.state === 'lost') this.toLevels();
       return;
     }
     if (import.meta.env.DEV && (this.state === 'title' || this.state === 'settings') && (k === 'i' || k === 'I')) { this.showInstallHelp(); return; }
     if (import.meta.env.DEV && this.state === 'title' && (k === 's' || k === 'S')) { this.saveSplash(); return; }
+    if (import.meta.env.DEV && (this.state === 'title' || this.state === 'levels') && (k === 'm' || k === 'M' || k === 'ь' || k === 'Ь')) { this.toColony(); return; }
     if (this.state !== 'playing') return;
     if (k === 'n' || k === 'N' || k === 'т' || k === 'Т' || k === 'Enter') { this.callWave(); return; }
     const spell = SPELL_KEYS.findIndex((keys) => keys.includes(k));
@@ -890,6 +1043,7 @@ export class Game {
 
   update(dt: number): void {
     this.clock += dt;
+    if (this.colonyHint > 0) this.colonyHint -= dt;
     const inBattle = this.state === 'playing' || (this.state === 'settings' && this.settingsFrom === 'playing')
       || (this.state === 'bestiary' && this.bestiaryFrom === 'playing');
     audio.setMusic(inBattle ? 'battle' : 'menu');
@@ -918,6 +1072,11 @@ export class Game {
       this.state = 'lost';
       audio.play('lose');
       this.selected = null;
+      if (this.mode === 'campaign') {
+        this.grainGained = lossGrain(this.world.clearedWaves, this.difficulty.id);
+        this.addGrain(this.grainGained);
+        saveProgress(this.progress);
+      }
       this.commitEndless();
     }
   }
@@ -927,6 +1086,14 @@ export class Game {
   render(): void {
     const ctx = this.screen.ctx;
     this.screen.begin();
+    if (this.state === 'colony') {
+      this.drawColony(ctx);
+      this.ui.draw(ctx);
+      this.uiFx.draw(ctx);
+      this.screen.end();
+      if (this.screen.cssH > this.screen.cssW) this.drawPortraitHint(ctx);
+      return;
+    }
     if (this.state === 'title' || (this.state === 'settings' && this.settingsFrom === 'title')) {
       // Заставка: диорама без игрового мира, поверх только текст и кнопка.
       this.drawSplash(ctx);
@@ -1108,6 +1275,52 @@ export class Game {
     ctx.restore();
     drawText(ctx, t('portrait.title'), x + 70, y + 24, { size: 18, color: PAL.uiGold, stroke: null });
     drawText(ctx, t('portrait.sub'), x + 70, y + 46, { size: 14, weight: 'normal', stroke: null });
+  }
+
+  /** Разрез муравейника: статичное из печи, живое поверх каждый кадр. */
+  private drawColony(ctx: CanvasRenderingContext2D): void {
+    const v = this.screen.view;
+    const cam = this.colonyCam;
+    cam.clamp(v);
+    // Весь мир одним холстом: разрешение по экрану и самому крупному масштабу, но не больше бюджета.
+    const k = Math.min(this.screen.pixelScale * cam.maxZoom, Math.sqrt(COLONY_BUDGET / (WORLD_W * WORLD_H)));
+    const lv = this.roomLevels;
+    const sig = JSON.stringify(lv);
+    const b = this.colonyBg;
+    if (!b || Math.abs(b.k - k) > 0.15 || b.sig !== sig) {
+      const c = document.createElement('canvas');
+      c.width = Math.ceil(WORLD_W * k);
+      c.height = Math.ceil(WORLD_H * k);
+      const bctx = c.getContext('2d');
+      if (!bctx) return;
+      bctx.scale(k, k);
+      bakeColony(bctx, lv);
+      this.colonyBg = { canvas: c, k, sig };
+    }
+    ctx.save();
+    cam.apply(ctx);
+    const bg = this.colonyBg;
+    if (bg) ctx.drawImage(bg.canvas, 0, 0, WORLD_W, WORLD_H);
+    const max = {} as RoomLevels;
+    const can: Partial<Record<RoomId, boolean>> = {};
+    for (const r of ROOMS) {
+      max[r.id] = roomMax(r);
+      const cost = roomCost(r, lv[r.id]);
+      can[r.id] = cost !== null && cost <= this.progress.grain;
+    }
+    const built = this.colonyBuilt;
+    drawColonyLife(ctx, this.clock, cam.visible(v), {
+      labels: {
+        solar: t('colony.solar'), nursery: t('colony.nursery'), lab: t('colony.lab'), granary: t('colony.granary'),
+        fungus: t('colony.fungus'), hangar: t('colony.hangar'), workshop: t('colony.workshop'), forage: t('colony.forage'), rubble: t('colony.rubble'),
+      },
+      level: lv,
+      max,
+      can,
+      pick: this.colonyPick,
+      built: built ? { id: built.id, age: this.clock - built.at } : null,
+    });
+    ctx.restore();
   }
 
   private drawSplash(ctx: CanvasRenderingContext2D): void {

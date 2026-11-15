@@ -5,12 +5,16 @@
  *   npx tsx sim/campaign.ts soften id ...  — снижать сложность по 8 %, пока обе смешанные стратегии не выиграют
  *   npx tsx sim/campaign.ts soften --no-spells id ... — то же, но выиграть должен и робот без заклинаний
  *   npx tsx sim/campaign.ts check          — прогнать все карты всеми стратегиями и показать итог
+ *   PERKS=stars npx tsx sim/campaign.ts check — то же со старой моделью перков за звёзды (для сравнения)
+ *   ROOM_COST=15,30,60 ROOM_CLEAR=40 npx tsx sim/campaign.ts check — камеры по другим ценам
  * Результат пишется в src/game/maps.gen.ts; файл коммитится, игра его только читает.
  */
 import { writeFileSync } from 'node:fs';
 import { Rng } from '../src/engine/rng';
 import { DIFFICULTIES, type TowerKind } from '../src/game/config';
-import { levelFromGen, LEVELS, type MapGen, type ThemeKey } from '../src/game/campaign';
+import { levelFromGen, LEVELS, LEVEL_ACT, type MapGen, type ThemeKey } from '../src/game/campaign';
+import { cheapestFirst } from '../src/game/chambers';
+import { GRAIN_TUTORIAL, winGrain } from '../src/game/grain';
 import { GENERATED } from '../src/game/maps.gen';
 import { PERKS, perksFromRanks, type Perks } from '../src/game/perks';
 import { World } from '../src/game/world';
@@ -92,8 +96,22 @@ function write(maps: readonly MapGen[]): void {
 
 // ───────────── подбор сложности ─────────────
 
-/** Перки, которые к этой карте скорее всего уже куплены: по две звезды за каждую пройденную карту. */
+/**
+ * Камеры, которые к этой карте скорее всего уже отстроены: зерно за обучение и за каждую пройденную
+ * карту с двумя звёздами (без дара дня и осады — с запасом), каждый раз на самый дешёвый уровень.
+ */
 function perksAt(globalIndex: number): Perks {
+  if (process.env.PERKS === 'stars') return perksByStars(globalIndex);
+  let grain = GRAIN_TUTORIAL;
+  for (let i = 0; i < globalIndex; i++) grain += winGrain(LEVEL_ACT[i] ?? 0, 'normal', 2);
+  // Для сравнения цен: ROOM_COST=15,30,60 ROOM_CLEAR=40.
+  const levelCost = process.env.ROOM_COST?.split(',').map(Number);
+  const clear = process.env.ROOM_CLEAR ? Number(process.env.ROOM_CLEAR) : undefined;
+  return perksFromRanks(cheapestFirst(grain, levelCost, clear));
+}
+
+/** Старая модель: перки за звёзды, по две звезды за каждую пройденную карту. */
+function perksByStars(globalIndex: number): Perks {
   let stars = Math.min(20, globalIndex * 2);
   const ranks: Record<string, number> = {};
   const order = ['bounty', 'startGold', 'acidDmg', 'soldierHp', 'spore', 'catapultDmg', 'hero', 'lives'];

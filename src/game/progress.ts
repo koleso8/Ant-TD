@@ -2,7 +2,8 @@ import { DIFFICULTIES, ENEMIES, TARGET_MODES, type DifficultyId, type EnemyKind,
 import { LEVELS } from './campaign';
 import { TUTORIAL } from './levels';
 import { LANGS, type Lang } from './i18n';
-import { PERKS, starsSpent } from './perks';
+import { PERKS } from './perks';
+import { DAILY_GIFTS, GRAIN_PER_STAR, type DailyState } from './grain';
 
 /** Настройки игрока: язык (null — определить по браузеру), громкость 0..1, полный экран. */
 export interface Settings {
@@ -21,7 +22,7 @@ export interface EndlessRecord {
 
 /** Сохранение прогресса в localStorage: звёзды по уровням, перки, выбранная сложность, настройки. */
 export interface Progress {
-  version: 5;
+  version: 6;
   stars: Record<string, number>;
   perks: Record<string, number>;
   /** Выбранная сложность: запоминается между уровнями. */
@@ -37,6 +38,10 @@ export interface Progress {
   endless: Partial<Record<DifficultyId, EndlessRecord>>;
   /** Виды врагов, которых игрок уже встречал: их карточки открыты в меню «Враги». */
   seen: EnemyKind[];
+  /** Зерно колонии: за бои и дар дня, тратится на отстройку муравейника. */
+  grain: number;
+  /** Дар дня: когда взят последний и какой это был день календаря. */
+  daily: DailyState;
 }
 
 const KEY = 'anthill-td-progress';
@@ -51,8 +56,8 @@ export function defaultSettings(): Settings {
 
 export function defaultProgress(): Progress {
   return {
-    version: 5, stars: {}, perks: {}, difficulty: 'normal', beaten: {}, targetMode: 'first', settings: defaultSettings(),
-    tutorialDone: false, endless: {}, seen: [],
+    version: 6, stars: {}, perks: {}, difficulty: 'normal', beaten: {}, targetMode: 'first', settings: defaultSettings(),
+    tutorialDone: false, endless: {}, seen: [], grain: 0, daily: { last: null, day: 0 },
   };
 }
 
@@ -102,8 +107,16 @@ export function loadProgress(): Progress {
     const seen = Array.isArray(p.seen)
       ? [...new Set(p.seen.filter((k): k is EnemyKind => typeof k === 'string' && k in ENEMIES))]
       : seenFromStars(stars, tutorialDone);
+    // Сохранения до зерна: зерно за уже взятые звёзды, как если бы оно было с самого начала.
+    const grain = typeof p.grain === 'number' && Number.isFinite(p.grain)
+      ? Math.max(0, Math.floor(p.grain))
+      : Object.values(stars).reduce((n, k) => n + k, 0) * GRAIN_PER_STAR;
+    const d: Partial<DailyState> = p.daily ?? {};
+    const daily: DailyState = typeof d.last === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.last)
+      ? { last: d.last, day: Math.min(DAILY_GIFTS.length, Math.max(1, Math.floor(Number(d.day)) || 1)) }
+      : { last: null, day: 0 };
     return {
-      version: 5,
+      version: 6,
       stars,
       perks,
       difficulty: validDifficulty(p.difficulty) ?? 'normal',
@@ -118,6 +131,8 @@ export function loadProgress(): Progress {
       tutorialDone,
       endless,
       seen,
+      grain,
+      daily,
     };
   } catch {
     return defaultProgress();
@@ -136,10 +151,6 @@ export function totalStars(p: Progress): number {
   let n = 0;
   for (const k of Object.keys(p.stars)) n += p.stars[k];
   return n;
-}
-
-export function freeStars(p: Progress): number {
-  return Math.max(0, totalStars(p) - starsSpent(p.perks));
 }
 
 /** Порядок сложности для сравнения: чем больше, тем сложнее; -1, если не задана. */

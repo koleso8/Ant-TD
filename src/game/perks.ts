@@ -1,11 +1,11 @@
 import type { TowerKind, TowerLevel } from './config';
 
-/** Перк: постоянное улучшение, покупается за звёзды между уровнями. */
+/** Перк: постоянное улучшение в бою. Ранг перка — уровень камеры муравейника (chambers.ts), отстраивается за зерно. */
 export interface PerkDef {
   id: string;
   name: string;
   maxRank: number;
-  /** Звёзд за один ранг. */
+  /** Старая цена ранга в звёздах: только для сравнения в sim/campaign.ts (PERKS=stars). */
   cost: number;
   /** Описание эффекта при данном ранге (1..maxRank). */
   desc: (rank: number) => string;
@@ -65,12 +65,6 @@ export function perksFromRanks(ranks: Readonly<Record<string, number>>): Perks {
 }
 
 export const NO_PERKS: Perks = perksFromRanks({});
-
-export function starsSpent(ranks: Readonly<Record<string, number>>): number {
-  let total = 0;
-  for (const p of PERKS) total += Math.min(ranks[p.id] ?? 0, p.maxRank) * p.cost;
-  return total;
-}
 
 /** Применить перки и дары к статистике башни. */
 export function applyPerks(kind: TowerKind, s: TowerLevel, p: Perks): TowerLevel {
