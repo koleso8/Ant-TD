@@ -29,12 +29,12 @@ export const ROOMS: readonly RoomDef[] = [
 ];
 
 /**
- * Зерно за уровни 1, 2, 3. Цены подобраны роботом (sim/campaign.ts): камеры отстраиваются примерно
- * так же быстро, как раньше покупались перки за звёзды, поэтому сложность карт осталась прежней.
+ * Зерно за уровни 1, 2, 3. Долгая мета: весь муравейник стоит 2220 зерна и отстраивается к пятому-
+ * шестому акту. Сложность карт робот (sim/campaign.ts) подобрал под этот медленный рост.
  */
-export const LEVEL_COST: readonly number[] = [15, 30, 60];
+export const LEVEL_COST: readonly number[] = [40, 100, 200];
 /** Расчистка завала: прибавляется к первому уровню камеры под завалом. */
-export const CLEAR_COST = 40;
+export const CLEAR_COST = 150;
 
 export function roomDef(id: RoomId): RoomDef {
   return ROOMS.find((r) => r.id === id) ?? ROOMS[0];
